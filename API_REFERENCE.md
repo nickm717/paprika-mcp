@@ -46,9 +46,18 @@ underlying API. The full tool list is in the README. Tool logic lives in
 **Soft deletes:**
 - `trash_recipe` sets `in_trash: true`.
 - `remove_meal` sets `deleted: true`.
-- `remove_grocery_items` sets `purchased: true` and `deleted: true`. Whether the
-  Paprika apps hide `deleted` groceries (vs. just showing them checked) is
-  unverified; `list_grocery_items` always hides `deleted` items.
+- `remove_grocery_items` sets `purchased: true` and `deleted: true`.
+- Verified live 2026-11-16: after a `deleted: true` POST, the meal or grocery
+  item no longer appears in `GET /v2/sync/meals/` or `/v2/sync/groceries/` at
+  all (the server drops it, not just flags it). `list_grocery_items` and
+  `list_meals` still filter `deleted` defensively.
+
+**Live E2E (2026-11-16, real account):** create → update (rating, notes) →
+add to meal plan by `recipe_uid` → add recipe ingredients to the default list →
+remove meal → remove groceries → trash recipe all succeeded, and the Paprika
+app showed each change. A meal posted with `type_uid: ""` and only `type: 2`
+appeared under Dinner. Groceries posted with `aisle: ""` and the full line as
+`ingredient` (e.g. "2 cups flour") came back with `aisle: ""` from the API.
 
 **Defaults:**
 - Grocery tools with no `list_uid` use the list with `is_default: true`, else the first list. A `list_uid` may be an exact uid or a list name (case-insensitive); anything else raises `ValueError` listing the lists.
@@ -356,7 +365,7 @@ data: <gzip-compressed JSON array>
 5. `date` uses `"YYYY-MM-DD HH:MM:SS"`; `type` is 0=Breakfast, 1=Lunch, 2=Dinner, 3=Snack.
 6. Set `recipe_uid` to link a recipe, or `null` for a text-only meal.
 
-**Soft Delete:** Set `deleted: true` on the entry and POST the array again.
+**Soft Delete:** Set `deleted: true` on the entry and POST the array again. The entry then disappears from `GET /v2/sync/meals/` (verified 2026-11-16).
 
 ---
 
