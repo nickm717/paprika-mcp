@@ -39,7 +39,7 @@ def test_add_items_files_into_learned_aisles(client, api):
         "2 cups flour": ("flour", "Baking Goods", "A_BAKING"),
         "1 egg": ("egg", "Dairy", "A_DAIRY"),
         "bananas": ("bananas", "Produce", "A_PRODUCE"),
-        "cheddar cheese": ("cheddar cheese", "", None),
+        "cheddar cheese": ("cheddar cheese", "Dairy", "A_DAIRY"),  # via the table
     }
 
 
@@ -86,3 +86,22 @@ def test_update_item_clearing_aisle_clears_uid(client, api, mock_api):
 
     (item,) = decode_upload(api.calls[0].request)
     assert (item["aisle"], item["aisle_uid"]) == ("", None)
+
+
+def test_common_foods_fall_back_to_table(client, api):
+    ops.add_grocery_items(client, [{"name": "1 cup milk"}, {"name": "2 lb chicken thighs"}, {"name": "unicorn dust"}])
+
+    got = filed(api)
+    assert got["1 cup milk"][1:] == ("Dairy", "A_DAIRY")
+    assert got["unicorn dust"][1:] == ("", None)
+    assert got["2 lb chicken thighs"][1:] == ("", None)  # "Meat" isn't one of this account's aisles
+
+
+def test_learned_aisle_beats_table(client, api, mock_api):
+    mock_api.get(f"{API}/v2/sync/groceryingredients/").mock(
+        return_value=httpx.Response(200, json={"result": [{"uid": "G9", "name": "milk", "aisle_uid": "A_PRODUCE"}]})
+    )
+
+    ops.add_grocery_items(client, [{"name": "milk"}])
+
+    assert filed(api)["milk"][1] == "Produce"

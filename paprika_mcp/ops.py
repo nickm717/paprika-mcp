@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 from .client import PaprikaClient
+from .aisle_table import table_aisle
 from .ingredients import ingredient_lines, ingredient_name
 
 # Writable recipe fields and their defaults (API_REFERENCE.md "Recipe Object Fields").
@@ -171,7 +172,10 @@ def list_grocery_items(client: PaprikaClient, list_uid: str | None = None, inclu
 
 
 class Aisles:
-    """The account's aisles plus its learned ingredient-to-aisle map (the server never assigns aisles)."""
+    """The account's aisles, its learned ingredient-to-aisle map, then a common-foods table.
+
+    The server never assigns aisles, so the client has to.
+    """
 
     def __init__(self, client: PaprikaClient) -> None:
         self.aisles = sorted(client.list_grocery_aisles(), key=lambda a: a.get("order_flag") or 0)
@@ -199,6 +203,11 @@ class Aisles:
         for v in variants:
             if v in self.learned:
                 return self.learned[v]
+        fallback = table_aisle(n)
+        if fallback:
+            for a in self.aisles:
+                if (a.get("name") or "").strip().lower() == fallback.lower():
+                    return a
         return None
 
 
