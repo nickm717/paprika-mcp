@@ -7,9 +7,6 @@ from .recipe_cache import RecipeCache
 
 mcp = FastMCP("Paprika Recipe Manager")
 
-MEAL_TYPES = {0: "Breakfast", 1: "Lunch", 2: "Dinner", 3: "Snack"}
-
-
 def _client() -> PaprikaClient:
     settings = get_settings()
     return PaprikaClient(
@@ -87,55 +84,50 @@ def list_grocery_items(list_uid: str | None = None, include_checked: bool = Fals
 
 @mcp.tool()
 def list_meal_plans(start_date: str | None = None, end_date: str | None = None) -> list[dict]:
-    """List meal plan entries, optionally filtered by date range.
+    """List meal plan entries, optionally between two dates (YYYY-MM-DD, inclusive).
 
-    Returns meal entries with name, date, meal type, and optional recipe reference.
-    Each entry includes a human-readable meal_type_name field in addition to the
-    numeric type field (0=Breakfast, 1=Lunch, 2=Dinner, 3=Snack).
-
-    Args:
-        start_date: Optional start date (YYYY-MM-DD) inclusive.
-        end_date: Optional end date (YYYY-MM-DD) inclusive.
+    Each entry has uid, name, date, type (0=Breakfast, 1=Lunch, 2=Dinner, 3=Snack),
+    a readable meal_type_name, and recipe_uid when linked to a recipe.
     """
-    meals = _client().list_meal_plans()
-    if start_date or end_date:
-        from datetime import date
-
-        start = date.fromisoformat(start_date) if start_date else None
-        end = date.fromisoformat(end_date) if end_date else None
-
-        filtered: list[dict] = []
-        for meal in meals:
-            meal_date_str = meal.get("date", "").split(" ")[0]
-            try:
-                meal_date = date.fromisoformat(meal_date_str)
-            except Exception:
-                continue
-            if start and meal_date < start:
-                continue
-            if end and meal_date > end:
-                continue
-            filtered.append(meal)
-        meals = filtered
-    for meal in meals:
-        meal["meal_type_name"] = MEAL_TYPES.get(meal.get("type"), "Unknown")
-    return meals
+    return ops.list_meals(_client(), start_date, end_date)
 
 
 @mcp.tool()
 def get_meals_for_date(date: str) -> list[dict]:
-    """Get meal plan entries for a specific date (YYYY-MM-DD).
+    """Get meal plan entries for one date (YYYY-MM-DD)."""
+    return ops.list_meals(_client(), date, date)
 
-    Returns meals scheduled on the given date with an added meal_type_name field.
+
+@mcp.tool()
+def add_meal(date: str, meal_type: str, name: str | None = None, recipe_uid: str | None = None) -> dict:
+    """Add a meal to the meal plan.
+
+    date: YYYY-MM-DD. meal_type: breakfast, lunch, dinner or snack.
+    Give recipe_uid to link a recipe (its name is used if name is omitted),
+    or just a name for a text-only meal.
     """
-    meals = _client().list_meal_plans()
-    filtered: list[dict] = []
-    for meal in meals:
-        meal_date = meal.get("date", "").split(" ")[0]
-        if meal_date == date:
-            meal["meal_type_name"] = MEAL_TYPES.get(meal.get("type"), "Unknown")
-            filtered.append(meal)
-    return filtered
+    return ops.add_meal(_client(), date, meal_type, name, recipe_uid)
+
+
+@mcp.tool()
+def update_meal(
+    uid: str,
+    date: str | None = None,
+    meal_type: str | None = None,
+    name: str | None = None,
+    recipe_uid: str | None = None,
+) -> dict:
+    """Move or edit a meal plan entry. Only the fields you pass change.
+
+    date: YYYY-MM-DD. meal_type: breakfast, lunch, dinner or snack.
+    """
+    return ops.update_meal(_client(), uid, date, meal_type, name, recipe_uid)
+
+
+@mcp.tool()
+def remove_meal(uid: str) -> dict:
+    """DESTRUCTIVE: remove a meal from the meal plan. Confirm with the user first."""
+    return ops.remove_meal(_client(), uid)
 
 
 @mcp.tool()

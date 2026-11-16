@@ -198,3 +198,104 @@ def remove_grocery_items(client: PaprikaClient, uids: list[str]) -> list[dict]:
         item["purchased"] = True
         item["deleted"] = True
     return _save_grocery_items(client, items)
+
+
+# --- Meal plan ---
+
+MEAL_TYPES = {0: "Breakfast", 1: "Lunch", 2: "Dinner", 3: "Snack"}
+_MEAL_TYPE_BY_NAME = {v.lower(): k for k, v in MEAL_TYPES.items()}
+
+
+def parse_meal_type(value: str | int) -> int:
+    if isinstance(value, int) and value in MEAL_TYPES:
+        return value
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in _MEAL_TYPE_BY_NAME:
+            return _MEAL_TYPE_BY_NAME[v]
+        if v.isdigit() and int(v) in MEAL_TYPES:
+            return int(v)
+    raise ValueError(f"Unknown meal type {value!r}. Use one of: breakfast, lunch, dinner, snack")
+
+
+def parse_date(value: str) -> str:
+    try:
+        d = datetime.strptime(value.strip()[:10], "%Y-%m-%d")
+    except (ValueError, AttributeError) as exc:
+        raise ValueError(f"Invalid date {value!r}; use YYYY-MM-DD, e.g. 2026-11-20") from exc
+    return d.strftime("%Y-%m-%d 00:00:00")
+
+
+def add_meal(client: PaprikaClient, date: str, meal_type: str | int,
+             name: str | None = None, recipe_uid: str | None = None) -> dict:
+    if not name and not recipe_uid:
+        raise ValueError("Give a name or recipe_uid for the meal")
+    meal_date, type_num = parse_date(date), parse_meal_type(meal_type)
+    if not name:
+        name = _fetch_recipe(client, recipe_uid)["name"]
+    meal = {
+        "uid": new_uid(),
+        "recipe_uid": recipe_uid,
+        "date": meal_date,
+        "type": type_num,
+        "name": name,
+        "order_flag": 0,
+        "type_uid": "",
+        "scale": None,
+        "is_ingredient": False,
+        "deleted": False,
+    }
+    client.upsert_meals([meal])
+    client.notify()
+    return meal
+
+
+def _fetch_meal(client: PaprikaClient, uid: str) -> dict:
+    for meal in client.list_meal_plans():
+        if meal.get("uid") == uid:
+            return meal
+    raise ValueError(f"Meal {uid} not found")
+
+
+def _save_meal(client: PaprikaClient, meal: dict) -> dict:
+    client.upsert_meals([meal])
+    client.notify()
+    return meal
+
+
+def update_meal(client: PaprikaClient, uid: str, date: str | None = None, meal_type: str | int | None = None,
+                name: str | None = None, recipe_uid: str | None = None) -> dict:
+    changes: dict = {}
+    if date is not None:
+        changes["date"] = parse_date(date)
+    if meal_type is not None:
+        changes["type"] = parse_meal_type(meal_type)
+    if name is not None:
+        changes["name"] = name
+    if recipe_uid is not None:
+        changes["recipe_uid"] = recipe_uid
+    meal = _fetch_meal(client, uid)
+    meal.update(changes)
+    return _save_meal(client, meal)
+
+
+def remove_meal(client: PaprikaClient, uid: str) -> dict:
+    meal = _fetch_meal(client, uid)
+    meal["deleted"] = True
+    return _save_meal(client, meal)
+
+
+def list_meals(client: PaprikaClient, start_date: str | None = None, end_date: str | None = None) -> list[dict]:
+    """Meal plan entries (removed ones hidden), optionally within an inclusive date range."""
+    start = parse_date(start_date)[:10] if start_date else None
+    end = parse_date(end_date)[:10] if end_date else None
+    result = []
+    for meal in client.list_meal_plans():
+        if meal.get("deleted"):
+            continue
+        day = (meal.get("date") or "")[:10]
+        if (start and day < start) or (end and day > end):
+            continue
+        meal["meal_type_name"] = MEAL_TYPES.get(meal.get("type"), "Unknown")
+        result.append(meal)
+    return result
