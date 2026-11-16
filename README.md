@@ -138,7 +138,7 @@ Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json
 
 ### Available Tools
 
-Grocery and meal tools default to your default grocery list when `list_uid` is omitted. Tools marked ⚠️ remove data (soft delete) and tell the model to confirm first.
+Grocery tools default to your default grocery list when `list_uid` is omitted, and accept a list name instead of a uid; an unknown list is an error. Tools marked ⚠️ remove data (soft delete) and tell the model to confirm first.
 
 | Tool | Description |
 |------|-------------|

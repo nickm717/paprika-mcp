@@ -51,7 +51,8 @@ underlying API. The full tool list is in the README. Tool logic lives in
   unverified; `list_grocery_items` always hides `deleted` items.
 
 **Defaults:**
-- Grocery tools with no `list_uid` use the list with `is_default: true`, else the first list.
+- Grocery tools with no `list_uid` use the list with `is_default: true`, else the first list. A `list_uid` may be an exact uid or a list name (case-insensitive); anything else raises `ValueError` listing the lists.
+- `update_recipe` / `create_recipe` coerce LLM-style values: a list for a text field is joined with newlines, a bare string `categories` becomes a one-item list, `rating` must be 0–5, bool fields must be real bools.
 - `add_grocery_items` sends one POST for all items; `aisle` is left empty for auto-assignment and `ingredient` defaults to `name.lower()`.
 - `add_recipe_to_grocery_list` adds each ingredient line as an item (blank lines
   and lines ending in `:` skipped) with `recipe_uid` set; quantities are left in
@@ -62,7 +63,7 @@ underlying API. The full tool list is in the README. Tool logic lives in
 **Recipe search cache:**
 - `search_recipes` keeps `recipe_cache.json` (mode 0600) in the config dir,
   keyed by uid with each recipe's `hash`. Each search calls the `{uid, hash}`
-  list once and refetches only changed recipes. A corrupt cache is rebuilt.
+  list once and refetches only changed recipes. A corrupt cache is rebuilt. A recipe that fails to fetch is skipped (or its stale copy kept) and retried next time; progress is saved every 50 recipes.
 
 **CLI update helper:**
 - `paprika-mcp update` pulls the latest git changes, reinstalls the package, and restarts the LaunchAgent if installed.
@@ -173,8 +174,8 @@ Authorization: Bearer <token>
 - `list_uid`: **Required** - specifies which grocery list item belongs to
 
 **Tooling Note:**
-- The MCP tool `list_grocery_items` requires `list_uid` and filters by list; set `include_checked=true` to include purchased items.
-- The MCP tool `add_grocery_item` requires `list_uid`; when `ingredient` is omitted it defaults to `name.lower()` and `aisle` is left empty for auto-assignment.
+- The MCP tool `list_grocery_items` filters by list (`list_uid` optional: default list, a uid, or a list name); set `include_checked=true` to include purchased items.
+- The MCP tool `add_grocery_item` takes an optional `list_uid` (uid or list name); `ingredient` defaults to `name.lower()` and `aisle` is left empty for auto-assignment.
 
 #### Create/Update Grocery Items
 **Request:**

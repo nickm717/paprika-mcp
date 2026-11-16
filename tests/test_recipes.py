@@ -111,3 +111,25 @@ def test_trash_recipe_sets_in_trash(client, mock_api):
     ops.trash_recipe(client, UID)
 
     assert decode_upload(route.calls[0].request)["in_trash"] is True
+
+
+def test_update_recipe_coerces_llm_style_values(client, mock_api):
+    _mock_get(mock_api)
+    route = _mock_post(mock_api)
+
+    ops.update_recipe(client, UID, {"ingredients": ["2 eggs", "1 cup milk"], "categories": "Dinner", "rating": "4"})
+
+    uploaded = decode_upload(route.calls[0].request)
+    assert uploaded["ingredients"] == "2 eggs\n1 cup milk"
+    assert uploaded["categories"] == ["Dinner"]
+    assert uploaded["rating"] == 4
+
+
+def test_update_recipe_rejects_bad_rating(client, mock_api):
+    _mock_get(mock_api)
+    route = _mock_post(mock_api)
+
+    with pytest.raises(ValueError, match="rating"):
+        ops.update_recipe(client, UID, {"rating": 9})
+
+    assert not route.called

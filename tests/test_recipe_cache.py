@@ -114,3 +114,24 @@ def test_corrupt_cache_file_rebuilds(tmp_path, client, api, server_recipes):
 
     assert [r["uid"] for r in recipes] == ["A"]
     assert "A" in json.loads(path.read_text())
+
+
+def test_sync_survives_one_failing_recipe(tmp_path, client, mock_api):
+    path = tmp_path / "c.json"
+    mock_api.get(f"{API}/v2/sync/recipes/").mock(
+        return_value=httpx.Response(200, json={"result": [{"uid": "A", "hash": "1"}, {"uid": "B", "hash": "2"}, {"uid": "C", "hash": "3"}]})
+    )
+    mock_api.get(f"{API}/v2/sync/recipe/A/").mock(return_value=httpx.Response(200, json={"result": recipe("A", "Apple")}))
+    mock_api.get(f"{API}/v2/sync/recipe/B/").mock(return_value=httpx.Response(500))
+    mock_api.get(f"{API}/v2/sync/recipe/C/").mock(return_value=httpx.Response(200, json={"result": recipe("C", "Cherry")}))
+
+    recipes = RecipeCache(path).sync(client)
+
+    assert sorted(r["uid"] for r in recipes) == ["A", "C"]
+    assert sorted(json.loads(path.read_text())) == ["A", "C"]  # B retried next time
+
+
+def test_search_tolerates_odd_field_types(tmp_path, client, api, server_recipes):
+    server_recipes.update(A={**recipe("A", "Soup"), "ingredients": ["1 onion"], "categories": "Dinner"})
+
+    assert [r["uid"] for r in RecipeCache(tmp_path / "c.json").search(client, ingredient="onion")] == ["A"]

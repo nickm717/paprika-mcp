@@ -73,7 +73,7 @@ def list_grocery_lists() -> list[dict]:
 
 @mcp.tool()
 def list_grocery_items(list_uid: str | None = None, include_checked: bool = False) -> list[dict]:
-    """List grocery items on a list (the default list if list_uid is omitted).
+    """List grocery items on a list (the default list if list_uid is omitted; a list name works too).
 
     Returns items with uid, name, quantity, ingredient, aisle, purchased status
     and recipe reference. Removed items are never shown; bought (checked) items
@@ -138,7 +138,8 @@ def add_grocery_item(
     list_uid: str | None = None,
     recipe_uid: str | None = None,
 ) -> dict:
-    """Add one grocery item. Omit list_uid to use the default grocery list.
+    """Add one grocery item. Omit list_uid to use the default grocery list;
+    list_uid may also be a list name.
 
     Paprika assigns the aisle itself. To add several items, use add_grocery_items.
     """
@@ -148,7 +149,8 @@ def add_grocery_item(
 
 @mcp.tool()
 def add_grocery_items(items: list[dict], list_uid: str | None = None) -> list[dict]:
-    """Add several grocery items in one go. Omit list_uid to use the default list.
+    """Add several grocery items in one go. Omit list_uid to use the default list;
+    list_uid may also be a list name.
 
     Each item is {"name": str, "quantity": str (optional), "instruction": str (optional)},
     e.g. [{"name": "Eggs", "quantity": "12"}, {"name": "Milk"}].
@@ -275,7 +277,7 @@ def list_pantry_items() -> list[dict]:
 
 @mcp.tool()
 def add_recipe_to_grocery_list(recipe_uid: str, list_uid: str | None = None) -> list[dict]:
-    """Add a recipe's ingredients to a grocery list (the default list if list_uid is omitted).
+    """Add a recipe's ingredients to a grocery list (the default list if list_uid is omitted; a list name works too).
 
     Each ingredient line becomes one item linked to the recipe; section headers
     like "For the sauce:" are skipped.

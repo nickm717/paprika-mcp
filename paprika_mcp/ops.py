@@ -51,13 +51,44 @@ def new_hash() -> str:
     return hashlib.sha256(uuid.uuid4().bytes).hexdigest()
 
 
-def _check_recipe_fields(fields: dict) -> None:
+def _check_recipe_fields(fields: dict) -> dict:
+    """Validate field names and coerce LLM-style values to Paprika's types. Returns a new dict."""
     bad = [k for k in fields if k not in RECIPE_DEFAULTS or k in READ_ONLY_RECIPE_FIELDS]
     if bad:
         raise ValueError(
             f"Unknown or read-only recipe field(s): {', '.join(sorted(bad))}. "
             f"Allowed: {', '.join(RECIPE_DEFAULTS)}"
         )
+    return {k: _coerce_recipe_value(k, v) for k, v in fields.items()}
+
+
+def _coerce_recipe_value(key: str, value: Any) -> Any:
+    default = RECIPE_DEFAULTS[key]
+    if value is None or default is None:
+        return value
+    if isinstance(default, bool):
+        if not isinstance(value, bool):
+            raise ValueError(f"Recipe field {key} must be true or false, got {value!r}")
+        return value
+    if key == "rating":
+        try:
+            rating = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"rating must be a whole number 0-5, got {value!r}") from exc
+        if not 0 <= rating <= 5:
+            raise ValueError(f"rating must be 0-5, got {rating}")
+        return rating
+    if key == "categories":
+        if isinstance(value, str):
+            return [value] if value else []
+        if isinstance(value, list) and all(isinstance(c, str) for c in value):
+            return value
+        raise ValueError(f"categories must be a list of category names, got {value!r}")
+    if isinstance(default, str):
+        if isinstance(value, list):
+            return "\n".join(str(v) for v in value)
+        return str(value)
+    return value
 
 
 def _fetch_recipe(client: PaprikaClient, uid: str) -> dict:
@@ -73,7 +104,7 @@ def _fetch_recipe(client: PaprikaClient, uid: str) -> dict:
 
 
 def create_recipe(client: PaprikaClient, name: str, ingredients: str = "", directions: str = "", **fields: Any) -> dict:
-    _check_recipe_fields(fields)
+    fields = _check_recipe_fields(fields)
     recipe = {k: (list(v) if isinstance(v, list) else v) for k, v in RECIPE_DEFAULTS.items()}
     recipe.update(fields)
     recipe.update(
@@ -90,7 +121,7 @@ def create_recipe(client: PaprikaClient, name: str, ingredients: str = "", direc
 
 
 def update_recipe(client: PaprikaClient, uid: str, changes: dict) -> dict:
-    _check_recipe_fields(changes)
+    changes = _check_recipe_fields(changes)
     recipe = _fetch_recipe(client, uid)
     recipe.update(changes)
     recipe["hash"] = new_hash()
@@ -115,9 +146,24 @@ def default_list_uid(client: PaprikaClient) -> str:
     return lists[0]["uid"]
 
 
+def resolve_list_uid(client: PaprikaClient, list_uid: str | None) -> str:
+    """Default list if None; else an exact uid or a list name (case-insensitive)."""
+    if not list_uid:
+        return default_list_uid(client)
+    lists = client.list_grocery_lists()
+    for gl in lists:
+        if gl.get("uid") == list_uid:
+            return list_uid
+    for gl in lists:
+        if (gl.get("name") or "").strip().lower() == list_uid.strip().lower():
+            return gl["uid"]
+    names = ", ".join(repr(gl.get("name")) for gl in lists)
+    raise ValueError(f"Grocery list {list_uid!r} not found. Lists: {names}")
+
+
 def list_grocery_items(client: PaprikaClient, list_uid: str | None = None, include_checked: bool = False) -> list[dict]:
     """Items on one list (default list if omitted); removed items are always hidden."""
-    target = list_uid or default_list_uid(client)
+    target = resolve_list_uid(client, list_uid)
     items = [i for i in client.list_grocery_items() if i.get("list_uid") == target and not i.get("deleted")]
     if not include_checked:
         items = [i for i in items if not i.get("purchased")]
@@ -146,7 +192,7 @@ def add_grocery_items(client: PaprikaClient, items: list[dict], list_uid: str | 
     """Add items ({name, quantity?, instruction?, recipe_uid?}) in one request."""
     if not items:
         raise ValueError("No items given")
-    target = list_uid or default_list_uid(client)
+    target = resolve_list_uid(client, list_uid)
     built = []
     for item in items:
         if not item.get("name"):
@@ -180,6 +226,8 @@ def update_grocery_item(client: PaprikaClient, uid: str, changes: dict) -> dict:
     bad = sorted(set(changes) - GROCERY_EDITABLE)
     if bad:
         raise ValueError(f"Unknown grocery field(s): {', '.join(bad)}. Allowed: {', '.join(sorted(GROCERY_EDITABLE))}")
+    if "list_uid" in changes:
+        changes = {**changes, "list_uid": resolve_list_uid(client, changes["list_uid"])}
     (item,) = _fetch_grocery_items(client, [uid])
     item.update(changes)
     return _save_grocery_items(client, [item])[0]

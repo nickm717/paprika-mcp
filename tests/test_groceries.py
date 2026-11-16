@@ -108,3 +108,20 @@ def test_list_items_filters_list_checked_and_deleted(client, mock_api):
 
     assert [i["uid"] for i in ops.list_grocery_items(client, "L2")] == ["A"]
     assert [i["uid"] for i in ops.list_grocery_items(client, None, include_checked=True)] == ["A", "B"]
+
+
+def test_list_uid_resolves_by_name(client, api):
+    ops.add_grocery_items(client, [{"name": "Eggs"}], "costco")
+
+    assert decode_upload(api.calls[0].request)[0]["list_uid"] == "L1"
+
+
+def test_unknown_list_raises(client, api):
+    with pytest.raises(ValueError, match="Grocery list 'Groceries' not found"):
+        ops.add_grocery_items(client, [{"name": "Eggs"}], "Groceries")
+    with pytest.raises(ValueError, match="not found"):
+        ops.list_grocery_items(client, "BOGUS")
+    with pytest.raises(ValueError, match="not found"):
+        ops.update_grocery_item(client, "I1", {"list_uid": "BOGUS"})
+
+    assert not api.called
