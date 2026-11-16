@@ -3,7 +3,7 @@ import gzip
 import json
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 
@@ -94,6 +94,18 @@ class PaprikaClient:
             content = gzip.decompress(content)
         return json.loads(content)
 
+    def _post_gzip(self, path: str, payload: Any) -> dict:
+        """POST gzip-compressed JSON as multipart field `data` (Paprika's write format)."""
+        data = gzip.compress(json.dumps(payload).encode("utf-8"))
+        return self._request("POST", path, files={"data": ("data", data)})
+
+    def notify(self) -> None:
+        """Ask Paprika to tell running apps to sync. Best-effort; never raises."""
+        try:
+            self._request("POST", "/v2/sync/notify/")
+        except Exception:
+            return
+
     # --- Public API methods ---
 
     def get_sync_status(self) -> dict:
@@ -151,9 +163,4 @@ class PaprikaClient:
             "separate": separate,
             "list_uid": list_uid,
         }
-        payload = gzip.compress(json.dumps([item]).encode("utf-8"))
-        return self._request(
-            "POST",
-            "/v2/sync/groceries/",
-            files={"data": ("data", payload)},
-        )
+        return self._post_gzip("/v2/sync/groceries/", [item])
