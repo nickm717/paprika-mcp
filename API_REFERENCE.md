@@ -58,11 +58,14 @@ remove meal → remove groceries → trash recipe all succeeded, and the Paprika
 app showed each change. A meal posted with `type_uid: ""` and only `type: 2`
 appeared under Dinner. Groceries posted with `aisle: ""` and the full line as
 `ingredient` (e.g. "2 cups flour") came back with `aisle: ""` from the API.
+A follow-up test with bare names ("butter", "bananas", "cheddar cheese") also
+landed in the app's Miscellaneous section, even though "butter" → Dairy exists
+in `groceryingredients`. **The server never assigns aisles** — see Aisles below.
 
 **Defaults:**
 - Grocery tools with no `list_uid` use the list with `is_default: true`, else the first list. A `list_uid` may be an exact uid or a list name (case-insensitive); anything else raises `ValueError` listing the lists.
 - `update_recipe` / `create_recipe` coerce LLM-style values: a list for a text field is joined with newlines, a bare string `categories` becomes a one-item list, `rating` must be 0–5, bool fields must be real bools.
-- `add_grocery_items` sends one POST for all items; `aisle` is left empty for auto-assignment and `ingredient` defaults to `name.lower()`.
+- `add_grocery_items` sends one POST for all items; `aisle` is left empty (the item lands in Miscellaneous) and `ingredient` defaults to `name.lower()`.
 - `add_recipe_to_grocery_list` adds each ingredient line as an item (blank lines
   and lines ending in `:` skipped) with `recipe_uid` set; quantities are left in
   the name for Paprika to parse.
@@ -178,13 +181,13 @@ Authorization: Bearer <token>
 - `uid`: Item unique ID (client-generated UUID4, uppercase)
 - `name`: Item display name
 - `purchased`: Boolean - checked/purchased status
-- `aisle`: Auto-assigned by Paprika based on `ingredient`
+- `aisle` / `aisle_uid`: set by the client. The Paprika apps look the parsed `ingredient` up in their aisle map and send both; the server does not assign them (verified 2026-11-16)
 - `ingredient`: Lowercase version of item name
 - `list_uid`: **Required** - specifies which grocery list item belongs to
 
 **Tooling Note:**
 - The MCP tool `list_grocery_items` filters by list (`list_uid` optional: default list, a uid, or a list name); set `include_checked=true` to include purchased items.
-- The MCP tool `add_grocery_item` takes an optional `list_uid` (uid or list name); `ingredient` defaults to `name.lower()` and `aisle` is left empty for auto-assignment.
+- The MCP tool `add_grocery_item` takes an optional `list_uid` (uid or list name); `ingredient` defaults to `name.lower()` and `aisle` is left empty, so the item lands in Miscellaneous.
 
 #### Create/Update Grocery Items
 **Request:**
@@ -228,7 +231,7 @@ data: <gzip-compressed JSON array>
 2. Send as multipart/form-data with field name `data`
 3. Client must generate UUID for new items
 4. Must specify `list_uid` to target correct list
-5. Leave `aisle` empty - Paprika auto-assigns
+5. `aisle` is NOT auto-assigned by the server. Empty `aisle`/`aisle_uid` puts the item in Miscellaneous; to file it, set `aisle_uid` (and `aisle` name) from `GET /v2/sync/groceryaisles/`
 
 #### Delete Grocery Items
 **Request:**
@@ -1213,7 +1216,7 @@ No `PUT /frames/{frameId}/meals/sittings/{sittingId}` calls were captured in `ou
 6. **Multiple Lists**: Must filter items by `list_uid` client-side
 7. **Unofficial API**: May break with app updates, no official documentation
 8. **Token Expiration**: Unknown duration - handle 401 gracefully
-9. **Aisle Auto-Assignment**: Server assigns aisles based on `ingredient`/`name` - leave `aisle` field empty when creating
+9. **No Aisle Auto-Assignment**: The server does not assign aisles (verified 2026-11-16). The apps send `aisle_uid` themselves, from the per-account ingredient→aisle map at `GET /v2/sync/groceryingredients/` (`{uid, name, aisle_uid}`) and the aisle list at `GET /v2/sync/groceryaisles/` (`{uid, name, order_flag}`)
 10. **Preserve Aisles**: Don't overwrite aisle field when syncing - only sync `name`, `purchased`, timestamps
 11. **Two-Step Recipe Sync**: `/sync/recipes/` returns only `{uid, hash}` pairs; must fetch each recipe individually via `/sync/recipe/{uid}/`
 12. **No Bulk Recipe Create**: `POST /v2/sync/recipes/` (plural) returns 500 errors; use individual `/sync/recipe/{uid}/` endpoint
