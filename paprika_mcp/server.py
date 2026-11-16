@@ -75,21 +75,14 @@ def list_grocery_lists() -> list[dict]:
 
 
 @mcp.tool()
-def list_grocery_items(list_uid: str, include_checked: bool = False) -> list[dict]:
-    """List grocery items for a specific grocery list.
+def list_grocery_items(list_uid: str | None = None, include_checked: bool = False) -> list[dict]:
+    """List grocery items on a list (the default list if list_uid is omitted).
 
-    Returns items with name, quantity, ingredient, aisle, purchased status,
-    recipe reference, and list membership.
-
-    Args:
-        list_uid: Grocery list UID to filter items.
-        include_checked: Include checked/purchased items when true.
+    Returns items with uid, name, quantity, ingredient, aisle, purchased status
+    and recipe reference. Removed items are never shown; bought (checked) items
+    are hidden unless include_checked is true.
     """
-    items = _client().list_grocery_items()
-    items = [item for item in items if item.get("list_uid") == list_uid]
-    if not include_checked:
-        items = [item for item in items if not item.get("purchased")]
-    return items
+    return ops.list_grocery_items(_client(), list_uid, include_checked)
 
 
 @mcp.tool()
@@ -147,31 +140,59 @@ def get_meals_for_date(date: str) -> list[dict]:
 
 @mcp.tool()
 def add_grocery_item(
-    list_uid: str,
     name: str,
     quantity: str | None = None,
     instruction: str | None = None,
-    purchased: bool = False,
-    ingredient: str | None = None,
-    order_flag: int = 0,
-    separate: bool = False,
+    list_uid: str | None = None,
     recipe_uid: str | None = None,
 ) -> dict:
-    """Add a grocery item to a specific list.
+    """Add one grocery item. Omit list_uid to use the default grocery list.
 
-    Requires list_uid. If ingredient is not provided, it defaults to name.lower().
+    Paprika assigns the aisle itself. To add several items, use add_grocery_items.
     """
-    return _client().create_grocery_item(
-        list_uid=list_uid,
-        name=name,
-        quantity=quantity,
-        instruction=instruction,
-        purchased=purchased,
-        ingredient=ingredient,
-        order_flag=order_flag,
-        separate=separate,
-        recipe_uid=recipe_uid,
-    )
+    item = {"name": name, "quantity": quantity, "instruction": instruction, "recipe_uid": recipe_uid}
+    return ops.add_grocery_items(_client(), [item], list_uid)[0]
+
+
+@mcp.tool()
+def add_grocery_items(items: list[dict], list_uid: str | None = None) -> list[dict]:
+    """Add several grocery items in one go. Omit list_uid to use the default list.
+
+    Each item is {"name": str, "quantity": str (optional), "instruction": str (optional)},
+    e.g. [{"name": "Eggs", "quantity": "12"}, {"name": "Milk"}].
+    """
+    return ops.add_grocery_items(_client(), items, list_uid)
+
+
+@mcp.tool()
+def update_grocery_item(uid: str, changes: dict) -> dict:
+    """Change fields on a grocery item, e.g. {"quantity": "2"} or {"list_uid": "..."} to move it.
+
+    Editable: name, quantity, instruction, purchased, list_uid, aisle, ingredient.
+    Other fields are kept as they are in Paprika.
+    """
+    return ops.update_grocery_item(_client(), uid, changes)
+
+
+@mcp.tool()
+def check_grocery_items(uids: list[str]) -> list[dict]:
+    """Mark grocery items as bought (checked off)."""
+    return ops.set_grocery_items_checked(_client(), uids, True)
+
+
+@mcp.tool()
+def uncheck_grocery_items(uids: list[str]) -> list[dict]:
+    """Mark grocery items as not bought (put them back on the list)."""
+    return ops.set_grocery_items_checked(_client(), uids, False)
+
+
+@mcp.tool()
+def remove_grocery_items(uids: list[str]) -> list[dict]:
+    """DESTRUCTIVE: remove grocery items from their list. Confirm with the user first.
+
+    Paprika has no true delete for groceries; items are marked deleted and bought.
+    """
+    return ops.remove_grocery_items(_client(), uids)
 
 
 @mcp.tool()
