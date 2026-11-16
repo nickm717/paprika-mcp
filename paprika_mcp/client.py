@@ -120,6 +120,10 @@ class PaprikaClient:
         """Return full details for a single recipe by UID."""
         return self._request("GET", f"/v2/sync/recipe/{uid}/")["result"]
 
+    def upsert_recipe(self, recipe: dict) -> dict:
+        """Create or update one recipe (bulk endpoint returns 500, so always per-uid)."""
+        return self._post_gzip(f"/v2/sync/recipe/{recipe['uid']}/", recipe)
+
     def list_categories(self) -> list:
         """Return all recipe categories."""
         return self._request("GET", "/v2/sync/categories/")["result"]

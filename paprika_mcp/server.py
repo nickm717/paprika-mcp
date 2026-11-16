@@ -1,5 +1,6 @@
 from fastmcp import FastMCP
 
+from . import ops
 from .client import PaprikaClient
 from .config import get_settings, token_cache_path
 
@@ -170,6 +171,69 @@ def add_grocery_item(
         separate=separate,
         recipe_uid=recipe_uid,
     )
+
+
+@mcp.tool()
+def create_recipe(
+    name: str,
+    ingredients: str = "",
+    directions: str = "",
+    description: str = "",
+    notes: str = "",
+    servings: str = "",
+    prep_time: str = "",
+    cook_time: str = "",
+    total_time: str = "",
+    categories: list[str] | None = None,
+    source: str = "",
+    source_url: str = "",
+    rating: int = 0,
+) -> dict:
+    """Create a new recipe in Paprika.
+
+    `ingredients` and `directions` are newline-separated text (one ingredient or
+    step per line). `categories` are category names (see list_categories).
+    Returns the created recipe including its new uid.
+    """
+    return ops.create_recipe(
+        _client(),
+        name=name,
+        ingredients=ingredients,
+        directions=directions,
+        description=description,
+        notes=notes,
+        servings=servings,
+        prep_time=prep_time,
+        cook_time=cook_time,
+        total_time=total_time,
+        categories=categories or [],
+        source=source,
+        source_url=source_url,
+        rating=rating,
+    )
+
+
+@mcp.tool()
+def update_recipe(uid: str, changes: dict) -> dict:
+    """Update fields on an existing recipe.
+
+    `changes` maps field names to new values, e.g. {"rating": 4, "notes": "..."}.
+    Only the given fields change; the latest version is fetched from Paprika
+    first so edits made in the app are kept. Editable fields: name, ingredients,
+    directions, description, notes, nutritional_info, servings, difficulty,
+    prep_time, cook_time, total_time, rating, categories, source, source_url,
+    on_favorites, is_pinned.
+    """
+    return ops.update_recipe(_client(), uid, changes)
+
+
+@mcp.tool()
+def trash_recipe(uid: str) -> dict:
+    """DESTRUCTIVE: move a recipe to Paprika's trash. Confirm with the user first.
+
+    Paprika has no permanent delete; the recipe can be restored from the trash in the app.
+    """
+    return ops.trash_recipe(_client(), uid)
 
 
 def main() -> None:
