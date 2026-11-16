@@ -283,7 +283,11 @@ def add_recipe_to_grocery_list(recipe_uid: str, list_uid: str | None = None) -> 
     return ops.add_recipe_to_grocery_list(_client(), recipe_uid, list_uid)
 
 
-def main() -> None:
+def main(stdio: bool = False) -> None:
+    if stdio:
+        # Launched by an MCP client (Claude Desktop / Claude Code); stdout is the protocol channel.
+        mcp.run(transport="stdio", show_banner=False)
+        return
     settings = get_settings()
     mcp.run(transport="http", host="127.0.0.1", port=settings.paprika_port)
 

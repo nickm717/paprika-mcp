@@ -28,20 +28,41 @@ For high-level implementation patterns and sync logic, refer to `./CLAUDE.md`.
 
 ## MCP Tooling (Paprika)
 
-These tools are intentionally curated for agent workflows and are not a 1:1 mapping
-to the underlying API. Meal-plan writes are intentionally not exposed.
+These tools are curated for agent workflows and are not a 1:1 mapping to the
+underlying API. The full tool list is in the README. Tool logic lives in
+`paprika_mcp/ops.py`; `server.py` is thin wrappers.
 
-**Read helpers:**
-- `get_meals_for_date(date)` - Return meal plan entries for a specific `YYYY-MM-DD` date with `meal_type_name` added.
+**Write behaviour (all write tools):**
+- Payloads are gzip-compressed JSON in multipart field `data` (`PaprikaClient._post_gzip`).
+- Updates re-fetch the current object and merge only the requested fields, so
+  edits made in the Paprika app since the last read are kept. Unknown uids raise
+  `ValueError("... not found")` rather than creating a blank object.
+- Every recipe write sets a fresh 64-char `hash` (SHA-256 of a random UUID) so
+  other devices detect the change.
+- After each write, `POST /v2/sync/notify/` is sent (best-effort, errors ignored)
+  to prompt running apps to sync.
+- New uids are uppercase UUID4.
 
-**Writes (limited):**
-- `add_grocery_item(list_uid, name, quantity?, instruction?, purchased?, ingredient?, order_flag?, separate?, recipe_uid?)`
-  - `list_uid` is required.
-  - `ingredient` defaults to `name.lower()` when omitted.
-  - `aisle` is always sent as an empty string to allow Paprika auto-assignment.
+**Soft deletes:**
+- `trash_recipe` sets `in_trash: true`.
+- `remove_meal` sets `deleted: true`.
+- `remove_grocery_items` sets `purchased: true` and `deleted: true`. Whether the
+  Paprika apps hide `deleted` groceries (vs. just showing them checked) is
+  unverified; `list_grocery_items` always hides `deleted` items.
 
-**Core read tools:**
-- `get_sync_status`, `list_recipes`, `get_recipe`, `list_categories`, `list_grocery_lists`, `list_grocery_items`, `list_meal_plans`
+**Defaults:**
+- Grocery tools with no `list_uid` use the list with `is_default: true`, else the first list.
+- `add_grocery_items` sends one POST for all items; `aisle` is left empty for auto-assignment and `ingredient` defaults to `name.lower()`.
+- `add_recipe_to_grocery_list` adds each ingredient line as an item (blank lines
+  and lines ending in `:` skipped) with `recipe_uid` set; quantities are left in
+  the name for Paprika to parse.
+- Meal tools accept `meal_type` as breakfast/lunch/dinner/snack (any case) or 0–3,
+  and `date` as `YYYY-MM-DD`.
+
+**Recipe search cache:**
+- `search_recipes` keeps `recipe_cache.json` (mode 0600) in the config dir,
+  keyed by uid with each recipe's `hash`. Each search calls the `{uid, hash}`
+  list once and refetches only changed recipes. A corrupt cache is rebuilt.
 
 **CLI update helper:**
 - `paprika-mcp update` pulls the latest git changes, reinstalls the package, and restarts the LaunchAgent if installed.
