@@ -72,6 +72,10 @@ in `groceryingredients`. **The server never assigns aisles**, so the MCP now doe
   - An explicit `aisle` name on an item wins; it must match an aisle (case-insensitive) or `ValueError` lists them.
 - `update_grocery_item` accepts `aisle` as an aisle name and sets `aisle_uid` with it; `""` clears both.
 - `list_grocery_aisles` returns `{uid, name}` in store order (`order_flag`).
+- Verified live 2026-11-16: an item posted with `aisle_uid` + `aisle` from these
+  endpoints appears under that aisle in the app ("butter" → Dairy). The learned
+  map only holds ingredients the user has filed themselves, so common items
+  (flour, eggs, milk, bananas) can be missing from it and still land in Miscellaneous.
 - `add_recipe_to_grocery_list` adds each ingredient line as an item (blank lines
   and lines ending in `:` skipped) with `recipe_uid` set; quantities are left in
   the name for Paprika to parse.
