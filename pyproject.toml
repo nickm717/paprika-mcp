@@ -14,9 +14,18 @@ dependencies = [
   "tomli>=2.0.0; python_version < '3.11'",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=8", "respx>=0.21"]
+
 [project.scripts]
 paprika-mcp = "paprika_mcp.cli:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools]
+packages = ["paprika_mcp"]

@@ -236,8 +236,8 @@ def cmd_update(_: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_run(_: argparse.Namespace) -> int:
-    server_main()
+def cmd_run(args: argparse.Namespace) -> int:
+    server_main(stdio=getattr(args, "stdio", False))
     return 0
 
 
@@ -254,7 +254,10 @@ def create_parser() -> argparse.ArgumentParser:
     setup_parser.add_argument("--password", help="Paprika password")
     setup_parser.add_argument("--port", type=int, help="Local MCP port")
 
-    subparsers.add_parser("run", help="Run MCP server in foreground")
+    run_parser = subparsers.add_parser("run", help="Run MCP server in foreground")
+    run_parser.add_argument(
+        "--stdio", action="store_true", help="Speak MCP over stdin/stdout (for Claude Desktop / Claude Code)"
+    )
     subparsers.add_parser("install", help="Install LaunchAgent")
     subparsers.add_parser("uninstall", help="Uninstall LaunchAgent")
 

@@ -1,12 +1,11 @@
 from fastmcp import FastMCP
 
+from . import ops
 from .client import PaprikaClient
-from .config import get_settings, token_cache_path
+from .config import RECIPE_CACHE_FILE, get_settings, token_cache_path
+from .recipe_cache import RecipeCache
 
 mcp = FastMCP("Paprika Recipe Manager")
-
-MEAL_TYPES = {0: "Breakfast", 1: "Lunch", 2: "Dinner", 3: "Snack"}
-
 
 def _client() -> PaprikaClient:
     settings = get_settings()
@@ -73,106 +72,249 @@ def list_grocery_lists() -> list[dict]:
 
 
 @mcp.tool()
-def list_grocery_items(list_uid: str, include_checked: bool = False) -> list[dict]:
-    """List grocery items for a specific grocery list.
+def list_grocery_aisles() -> list[dict]:
+    """List the grocery aisles in store order, as {uid, name}.
 
-    Returns items with name, quantity, ingredient, aisle, purchased status,
-    recipe reference, and list membership.
-
-    Args:
-        list_uid: Grocery list UID to filter items.
-        include_checked: Include checked/purchased items when true.
+    Use these names for the optional "aisle" of an item in add_grocery_item(s)
+    or update_grocery_item.
     """
-    items = _client().list_grocery_items()
-    items = [item for item in items if item.get("list_uid") == list_uid]
-    if not include_checked:
-        items = [item for item in items if not item.get("purchased")]
-    return items
+    return ops.list_grocery_aisles(_client())
+
+
+@mcp.tool()
+def list_grocery_items(list_uid: str | None = None, include_checked: bool = False) -> list[dict]:
+    """List grocery items on a list (the default list if list_uid is omitted; a list name works too).
+
+    Returns items with uid, name, quantity, ingredient, aisle, purchased status
+    and recipe reference. Removed items are never shown; bought (checked) items
+    are hidden unless include_checked is true.
+    """
+    return ops.list_grocery_items(_client(), list_uid, include_checked)
 
 
 @mcp.tool()
 def list_meal_plans(start_date: str | None = None, end_date: str | None = None) -> list[dict]:
-    """List meal plan entries, optionally filtered by date range.
+    """List meal plan entries, optionally between two dates (YYYY-MM-DD, inclusive).
 
-    Returns meal entries with name, date, meal type, and optional recipe reference.
-    Each entry includes a human-readable meal_type_name field in addition to the
-    numeric type field (0=Breakfast, 1=Lunch, 2=Dinner, 3=Snack).
-
-    Args:
-        start_date: Optional start date (YYYY-MM-DD) inclusive.
-        end_date: Optional end date (YYYY-MM-DD) inclusive.
+    Each entry has uid, name, date, type (0=Breakfast, 1=Lunch, 2=Dinner, 3=Snack),
+    a readable meal_type_name, and recipe_uid when linked to a recipe.
     """
-    meals = _client().list_meal_plans()
-    if start_date or end_date:
-        from datetime import date
-
-        start = date.fromisoformat(start_date) if start_date else None
-        end = date.fromisoformat(end_date) if end_date else None
-
-        filtered: list[dict] = []
-        for meal in meals:
-            meal_date_str = meal.get("date", "").split(" ")[0]
-            try:
-                meal_date = date.fromisoformat(meal_date_str)
-            except Exception:
-                continue
-            if start and meal_date < start:
-                continue
-            if end and meal_date > end:
-                continue
-            filtered.append(meal)
-        meals = filtered
-    for meal in meals:
-        meal["meal_type_name"] = MEAL_TYPES.get(meal.get("type"), "Unknown")
-    return meals
+    return ops.list_meals(_client(), start_date, end_date)
 
 
 @mcp.tool()
 def get_meals_for_date(date: str) -> list[dict]:
-    """Get meal plan entries for a specific date (YYYY-MM-DD).
+    """Get meal plan entries for one date (YYYY-MM-DD)."""
+    return ops.list_meals(_client(), date, date)
 
-    Returns meals scheduled on the given date with an added meal_type_name field.
+
+@mcp.tool()
+def add_meal(date: str, meal_type: str, name: str | None = None, recipe_uid: str | None = None) -> dict:
+    """Add a meal to the meal plan.
+
+    date: YYYY-MM-DD. meal_type: breakfast, lunch, dinner or snack.
+    Give recipe_uid to link a recipe (its name is used if name is omitted),
+    or just a name for a text-only meal.
     """
-    meals = _client().list_meal_plans()
-    filtered: list[dict] = []
-    for meal in meals:
-        meal_date = meal.get("date", "").split(" ")[0]
-        if meal_date == date:
-            meal["meal_type_name"] = MEAL_TYPES.get(meal.get("type"), "Unknown")
-            filtered.append(meal)
-    return filtered
+    return ops.add_meal(_client(), date, meal_type, name, recipe_uid)
+
+
+@mcp.tool()
+def update_meal(
+    uid: str,
+    date: str | None = None,
+    meal_type: str | None = None,
+    name: str | None = None,
+    recipe_uid: str | None = None,
+) -> dict:
+    """Move or edit a meal plan entry. Only the fields you pass change.
+
+    date: YYYY-MM-DD. meal_type: breakfast, lunch, dinner or snack.
+    """
+    return ops.update_meal(_client(), uid, date, meal_type, name, recipe_uid)
+
+
+@mcp.tool()
+def remove_meal(uid: str) -> dict:
+    """DESTRUCTIVE: remove a meal from the meal plan. Confirm with the user first."""
+    return ops.remove_meal(_client(), uid)
 
 
 @mcp.tool()
 def add_grocery_item(
-    list_uid: str,
     name: str,
     quantity: str | None = None,
     instruction: str | None = None,
-    purchased: bool = False,
-    ingredient: str | None = None,
-    order_flag: int = 0,
-    separate: bool = False,
+    list_uid: str | None = None,
     recipe_uid: str | None = None,
+    aisle: str | None = None,
 ) -> dict:
-    """Add a grocery item to a specific list.
+    """Add one grocery item. Omit list_uid to use the default grocery list;
+    list_uid may also be a list name.
 
-    Requires list_uid. If ingredient is not provided, it defaults to name.lower().
+    The item is filed into the aisle Paprika has learned for its ingredient
+    (e.g. "2 cups flour" -> flour's aisle), else a common-foods table; anything
+    else goes to Miscellaneous (returned with aisle ""). Pass aisle (a name from
+    list_grocery_aisles) to choose one.
+    To add several items, use add_grocery_items.
     """
-    return _client().create_grocery_item(
-        list_uid=list_uid,
+    item = {"name": name, "quantity": quantity, "instruction": instruction, "recipe_uid": recipe_uid, "aisle": aisle}
+    return ops.add_grocery_items(_client(), [item], list_uid)[0]
+
+
+@mcp.tool()
+def add_grocery_items(items: list[dict], list_uid: str | None = None) -> dict:
+    """Add several grocery items in one go. Omit list_uid to use the default list;
+    list_uid may also be a list name.
+
+    Each item is {"name": str, "quantity": str (optional), "instruction": str (optional),
+    "aisle": str (optional, a name from list_grocery_aisles)},
+    e.g. [{"name": "Eggs", "quantity": "12"}, {"name": "Milk"}].
+    Items without an aisle are filed into the aisle Paprika has learned for
+    their ingredient, else a common-foods table; anything else goes to Miscellaneous.
+
+    Returns {"items": [...], "unfiled": [{uid, name}], "next_step"?}. If you
+    already know an item's aisle, pass it up front instead.
+    """
+    return ops.filing_report(ops.add_grocery_items(_client(), items, list_uid))
+
+
+@mcp.tool()
+def update_grocery_item(uid: str, changes: dict) -> dict:
+    """Change fields on a grocery item, e.g. {"quantity": "2"} or {"list_uid": "..."} to move it.
+
+    Editable: name, quantity, instruction, purchased, list_uid, aisle, ingredient.
+    aisle is a name from list_grocery_aisles ("" moves it to Miscellaneous).
+    Other fields are kept as they are in Paprika.
+    """
+    return ops.update_grocery_item(_client(), uid, changes)
+
+
+@mcp.tool()
+def check_grocery_items(uids: list[str]) -> list[dict]:
+    """Mark grocery items as bought (checked off)."""
+    return ops.set_grocery_items_checked(_client(), uids, True)
+
+
+@mcp.tool()
+def uncheck_grocery_items(uids: list[str]) -> list[dict]:
+    """Mark grocery items as not bought (put them back on the list)."""
+    return ops.set_grocery_items_checked(_client(), uids, False)
+
+
+@mcp.tool()
+def remove_grocery_items(uids: list[str]) -> list[dict]:
+    """DESTRUCTIVE: remove grocery items from their list. Confirm with the user first.
+
+    Paprika has no true delete for groceries; items are marked deleted and bought.
+    """
+    return ops.remove_grocery_items(_client(), uids)
+
+
+@mcp.tool()
+def search_recipes(query: str = "", ingredient: str = "", category: str = "", limit: int = 20) -> list[dict]:
+    """Search your recipes by name, ingredient and/or category (all case-insensitive).
+
+    `query` matches the recipe name, `ingredient` matches text in the ingredient
+    list, `category` must equal a category name. Terms given are combined (AND).
+    Trashed recipes are excluded. Returns summaries; use get_recipe(uid) for full
+    details. The first call downloads every recipe and may be slow; later calls
+    only fetch recipes that changed.
+    """
+    results = RecipeCache(RECIPE_CACHE_FILE).search(
+        _client(), query=query, ingredient=ingredient, category=category, limit=limit
+    )
+    keys = ("uid", "name", "categories", "rating", "total_time")
+    return [{k: r.get(k) for k in keys} for r in results]
+
+
+@mcp.tool()
+def create_recipe(
+    name: str,
+    ingredients: str = "",
+    directions: str = "",
+    description: str = "",
+    notes: str = "",
+    servings: str = "",
+    prep_time: str = "",
+    cook_time: str = "",
+    total_time: str = "",
+    categories: list[str] | None = None,
+    source: str = "",
+    source_url: str = "",
+    rating: int = 0,
+) -> dict:
+    """Create a new recipe in Paprika.
+
+    `ingredients` and `directions` are newline-separated text (one ingredient or
+    step per line). `categories` are category names (see list_categories).
+    Returns the created recipe including its new uid.
+    """
+    return ops.create_recipe(
+        _client(),
         name=name,
-        quantity=quantity,
-        instruction=instruction,
-        purchased=purchased,
-        ingredient=ingredient,
-        order_flag=order_flag,
-        separate=separate,
-        recipe_uid=recipe_uid,
+        ingredients=ingredients,
+        directions=directions,
+        description=description,
+        notes=notes,
+        servings=servings,
+        prep_time=prep_time,
+        cook_time=cook_time,
+        total_time=total_time,
+        categories=categories or [],
+        source=source,
+        source_url=source_url,
+        rating=rating,
     )
 
 
-def main() -> None:
+@mcp.tool()
+def update_recipe(uid: str, changes: dict) -> dict:
+    """Update fields on an existing recipe.
+
+    `changes` maps field names to new values, e.g. {"rating": 4, "notes": "..."}.
+    Only the given fields change; the latest version is fetched from Paprika
+    first so edits made in the app are kept. Editable fields: name, ingredients,
+    directions, description, notes, nutritional_info, servings, difficulty,
+    prep_time, cook_time, total_time, rating, categories, source, source_url,
+    on_favorites, is_pinned.
+    """
+    return ops.update_recipe(_client(), uid, changes)
+
+
+@mcp.tool()
+def trash_recipe(uid: str) -> dict:
+    """DESTRUCTIVE: move a recipe to Paprika's trash. Confirm with the user first.
+
+    Paprika has no permanent delete; the recipe can be restored from the trash in the app.
+    """
+    return ops.trash_recipe(_client(), uid)
+
+
+@mcp.tool()
+def list_pantry_items() -> list[dict]:
+    """List what's in the pantry (Paprika's pantry inventory)."""
+    return _client().list_pantry_items()
+
+
+@mcp.tool()
+def add_recipe_to_grocery_list(recipe_uid: str, list_uid: str | None = None) -> dict:
+    """Add a recipe's ingredients to a grocery list (the default list if list_uid is omitted; a list name works too).
+
+    Each ingredient line becomes one item linked to the recipe; section headers
+    like "For the sauce:" are skipped. Each item is filed into the aisle Paprika
+    has learned for its ingredient, else a common-foods table.
+
+    Returns {"items": [...], "unfiled": [{uid, name}], "next_step"?}.
+    """
+    return ops.filing_report(ops.add_recipe_to_grocery_list(_client(), recipe_uid, list_uid))
+
+
+def main(stdio: bool = False) -> None:
+    if stdio:
+        # Launched by an MCP client (Claude Desktop / Claude Code); stdout is the protocol channel.
+        mcp.run(transport="stdio", show_banner=False)
+        return
     settings = get_settings()
     mcp.run(transport="http", host="127.0.0.1", port=settings.paprika_port)
 

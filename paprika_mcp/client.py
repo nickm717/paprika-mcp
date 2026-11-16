@@ -3,7 +3,7 @@ import gzip
 import json
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 
@@ -94,6 +94,18 @@ class PaprikaClient:
             content = gzip.decompress(content)
         return json.loads(content)
 
+    def _post_gzip(self, path: str, payload: Any) -> dict:
+        """POST gzip-compressed JSON as multipart field `data` (Paprika's write format)."""
+        data = gzip.compress(json.dumps(payload).encode("utf-8"))
+        return self._request("POST", path, files={"data": ("data", data)})
+
+    def notify(self) -> None:
+        """Ask Paprika to tell running apps to sync. Best-effort; never raises."""
+        try:
+            self._request("POST", "/v2/sync/notify/")
+        except Exception:
+            return
+
     # --- Public API methods ---
 
     def get_sync_status(self) -> dict:
@@ -108,6 +120,10 @@ class PaprikaClient:
         """Return full details for a single recipe by UID."""
         return self._request("GET", f"/v2/sync/recipe/{uid}/")["result"]
 
+    def upsert_recipe(self, recipe: dict) -> dict:
+        """Create or update one recipe (bulk endpoint returns 500, so always per-uid)."""
+        return self._post_gzip(f"/v2/sync/recipe/{recipe['uid']}/", recipe)
+
     def list_categories(self) -> list:
         """Return all recipe categories."""
         return self._request("GET", "/v2/sync/categories/")["result"]
@@ -116,6 +132,14 @@ class PaprikaClient:
         """Return all grocery lists."""
         return self._request("GET", "/v2/sync/grocerylists/")["result"]
 
+    def list_grocery_aisles(self) -> list:
+        """Return the account's grocery aisles ({uid, name, order_flag})."""
+        return self._request("GET", "/v2/sync/groceryaisles/")["result"]
+
+    def list_grocery_ingredients(self) -> list:
+        """Return the account's learned ingredient-to-aisle map ({uid, name, aisle_uid})."""
+        return self._request("GET", "/v2/sync/groceryingredients/")["result"]
+
     def list_grocery_items(self) -> list:
         """Return all grocery items across all lists."""
         return self._request("GET", "/v2/sync/groceries/")["result"]
@@ -123,6 +147,18 @@ class PaprikaClient:
     def list_meal_plans(self) -> list:
         """Return all meal plan entries."""
         return self._request("GET", "/v2/sync/meals/")["result"]
+
+    def upsert_grocery_items(self, items: list[dict]) -> dict:
+        """Create or update grocery items (array POST)."""
+        return self._post_gzip("/v2/sync/groceries/", items)
+
+    def list_pantry_items(self) -> list:
+        """Return all pantry items."""
+        return self._request("GET", "/v2/sync/pantry/")["result"]
+
+    def upsert_meals(self, meals: list[dict]) -> dict:
+        """Create or update meal plan entries (array POST; there is no per-uid endpoint)."""
+        return self._post_gzip("/v2/sync/meals/", meals)
 
     def create_grocery_item(
         self,
@@ -151,9 +187,4 @@ class PaprikaClient:
             "separate": separate,
             "list_uid": list_uid,
         }
-        payload = gzip.compress(json.dumps([item]).encode("utf-8"))
-        return self._request(
-            "POST",
-            "/v2/sync/groceries/",
-            files={"data": ("data", payload)},
-        )
+        return self._post_gzip("/v2/sync/groceries/", [item])

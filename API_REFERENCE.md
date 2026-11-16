@@ -28,20 +28,69 @@ For high-level implementation patterns and sync logic, refer to `./CLAUDE.md`.
 
 ## MCP Tooling (Paprika)
 
-These tools are intentionally curated for agent workflows and are not a 1:1 mapping
-to the underlying API. Meal-plan writes are intentionally not exposed.
+These tools are curated for agent workflows and are not a 1:1 mapping to the
+underlying API. The full tool list is in the README. Tool logic lives in
+`paprika_mcp/ops.py`; `server.py` is thin wrappers.
 
-**Read helpers:**
-- `get_meals_for_date(date)` - Return meal plan entries for a specific `YYYY-MM-DD` date with `meal_type_name` added.
+**Write behaviour (all write tools):**
+- Payloads are gzip-compressed JSON in multipart field `data` (`PaprikaClient._post_gzip`).
+- Updates re-fetch the current object and merge only the requested fields, so
+  edits made in the Paprika app since the last read are kept. Unknown uids raise
+  `ValueError("... not found")` rather than creating a blank object.
+- Every recipe write sets a fresh 64-char `hash` (SHA-256 of a random UUID) so
+  other devices detect the change.
+- After each write, `POST /v2/sync/notify/` is sent (best-effort, errors ignored)
+  to prompt running apps to sync.
+- New uids are uppercase UUID4.
 
-**Writes (limited):**
-- `add_grocery_item(list_uid, name, quantity?, instruction?, purchased?, ingredient?, order_flag?, separate?, recipe_uid?)`
-  - `list_uid` is required.
-  - `ingredient` defaults to `name.lower()` when omitted.
-  - `aisle` is always sent as an empty string to allow Paprika auto-assignment.
+**Soft deletes:**
+- `trash_recipe` sets `in_trash: true`.
+- `remove_meal` sets `deleted: true`.
+- `remove_grocery_items` sets `purchased: true` and `deleted: true`.
+- Verified live 2026-11-16: after a `deleted: true` POST, the meal or grocery
+  item no longer appears in `GET /v2/sync/meals/` or `/v2/sync/groceries/` at
+  all (the server drops it, not just flags it). `list_grocery_items` and
+  `list_meals` still filter `deleted` defensively.
 
-**Core read tools:**
-- `get_sync_status`, `list_recipes`, `get_recipe`, `list_categories`, `list_grocery_lists`, `list_grocery_items`, `list_meal_plans`
+**Live E2E (2026-11-16, real account):** create → update (rating, notes) →
+add to meal plan by `recipe_uid` → add recipe ingredients to the default list →
+remove meal → remove groceries → trash recipe all succeeded, and the Paprika
+app showed each change. A meal posted with `type_uid: ""` and only `type: 2`
+appeared under Dinner. Groceries posted with `aisle: ""` and the full line as
+`ingredient` (e.g. "2 cups flour") came back with `aisle: ""` from the API.
+A follow-up test with bare names ("butter", "bananas", "cheddar cheese") also
+landed in the app's Miscellaneous section, even though "butter" → Dairy exists
+in `groceryingredients`. **The server never assigns aisles**, so the MCP now does it (below).
+
+**Defaults:**
+- Grocery tools with no `list_uid` use the list with `is_default: true`, else the first list. A `list_uid` may be an exact uid or a list name (case-insensitive); anything else raises `ValueError` listing the lists.
+- `update_recipe` / `create_recipe` coerce LLM-style values: a list for a text field is joined with newlines, a bare string `categories` becomes a one-item list, `rating` must be 0–5, bool fields must be real bools.
+- `add_grocery_items` sends one POST for all items. Aisles are filed the way the apps do it:
+  - `ingredient` is parsed from the name (`ingredients.ingredient_name`: drops quantity, unit, parentheticals and anything after a comma, e.g. "2 cups flour, sifted" → "flour").
+  - The parsed name is looked up (also as singular/plural) in `GET /v2/sync/groceryingredients/`; a hit sets `aisle_uid` and the aisle `name` from `GET /v2/sync/groceryaisles/`.
+  - Next, a built-in common-foods table (`aisle_table.py`, keyed by Paprika's default aisle names) is tried: whole name, then shorter endings ("red bell pepper" → "bell pepper"), then shorter beginnings ("chicken thighs" → "chicken"). A table aisle the account doesn't have is skipped. The apps' own food list isn't exposed by the API, which is why this table exists.
+  - A miss leaves `aisle: ""` / `aisle_uid: null` (Miscellaneous).
+  - The `add_grocery_items` and `add_recipe_to_grocery_list` tools return `{"items", "unfiled": [{uid, name}], "next_step"?}` so Claude can file the rest with `update_grocery_item`.
+  - An explicit `aisle` name on an item wins; it must match an aisle (case-insensitive) or `ValueError` lists them.
+- `update_grocery_item` accepts `aisle` as an aisle name and sets `aisle_uid` with it; `""` clears both.
+- `list_grocery_aisles` returns `{uid, name}` in store order (`order_flag`).
+- Verified live 2026-11-16: an item posted with `aisle_uid` + `aisle` from these
+  endpoints appears under that aisle in the app ("butter" → Dairy). The learned
+  map only holds ingredients the user has filed themselves, so common items
+  (flour, eggs, milk, bananas) can be missing from it and still land in Miscellaneous.
+- Verified live 2026-11-16 with the common-foods table: flour → Baking Goods,
+  egg/milk/butter/cheddar → Dairy, bananas → Produce, all shown under those
+  aisles in the app. Dry run over 25 of the account's recipes: 297/321 lines filed.
+- `add_recipe_to_grocery_list` adds each ingredient line as an item (blank lines
+  and lines ending in `:` skipped) with `recipe_uid` set; quantities are left in
+  the name for Paprika to parse.
+- Meal tools accept `meal_type` as breakfast/lunch/dinner/snack (any case) or 0–3,
+  and `date` as `YYYY-MM-DD`.
+
+**Recipe search cache:**
+- `search_recipes` keeps `recipe_cache.json` (mode 0600) in the config dir,
+  keyed by uid with each recipe's `hash`. Each search calls the `{uid, hash}`
+  list once and refetches only changed recipes. A corrupt cache is rebuilt. A recipe that fails to fetch is skipped (or its stale copy kept) and retried next time; progress is saved every 50 recipes.
 
 **CLI update helper:**
 - `paprika-mcp update` pulls the latest git changes, reinstalls the package, and restarts the LaunchAgent if installed.
@@ -147,13 +196,13 @@ Authorization: Bearer <token>
 - `uid`: Item unique ID (client-generated UUID4, uppercase)
 - `name`: Item display name
 - `purchased`: Boolean - checked/purchased status
-- `aisle`: Auto-assigned by Paprika based on `ingredient`
+- `aisle` / `aisle_uid`: set by the client. The Paprika apps look the parsed `ingredient` up in their aisle map and send both; the server does not assign them (verified 2026-11-16)
 - `ingredient`: Lowercase version of item name
 - `list_uid`: **Required** - specifies which grocery list item belongs to
 
 **Tooling Note:**
-- The MCP tool `list_grocery_items` requires `list_uid` and filters by list; set `include_checked=true` to include purchased items.
-- The MCP tool `add_grocery_item` requires `list_uid`; when `ingredient` is omitted it defaults to `name.lower()` and `aisle` is left empty for auto-assignment.
+- The MCP tool `list_grocery_items` filters by list (`list_uid` optional: default list, a uid, or a list name); set `include_checked=true` to include purchased items.
+- The MCP tool `add_grocery_item` takes an optional `list_uid` (uid or list name); `ingredient` is parsed from the name and the aisle filed from the account's learned map (see MCP Tooling above).
 
 #### Create/Update Grocery Items
 **Request:**
@@ -197,7 +246,7 @@ data: <gzip-compressed JSON array>
 2. Send as multipart/form-data with field name `data`
 3. Client must generate UUID for new items
 4. Must specify `list_uid` to target correct list
-5. Leave `aisle` empty - Paprika auto-assigns
+5. `aisle` is NOT auto-assigned by the server. Empty `aisle`/`aisle_uid` puts the item in Miscellaneous; to file it, set `aisle_uid` (and `aisle` name) from `GET /v2/sync/groceryaisles/`
 
 #### Delete Grocery Items
 **Request:**
@@ -334,7 +383,7 @@ data: <gzip-compressed JSON array>
 5. `date` uses `"YYYY-MM-DD HH:MM:SS"`; `type` is 0=Breakfast, 1=Lunch, 2=Dinner, 3=Snack.
 6. Set `recipe_uid` to link a recipe, or `null` for a text-only meal.
 
-**Soft Delete:** Set `deleted: true` on the entry and POST the array again.
+**Soft Delete:** Set `deleted: true` on the entry and POST the array again. The entry then disappears from `GET /v2/sync/meals/` (verified 2026-11-16).
 
 ---
 
@@ -1182,7 +1231,7 @@ No `PUT /frames/{frameId}/meals/sittings/{sittingId}` calls were captured in `ou
 6. **Multiple Lists**: Must filter items by `list_uid` client-side
 7. **Unofficial API**: May break with app updates, no official documentation
 8. **Token Expiration**: Unknown duration - handle 401 gracefully
-9. **Aisle Auto-Assignment**: Server assigns aisles based on `ingredient`/`name` - leave `aisle` field empty when creating
+9. **No Aisle Auto-Assignment**: The server does not assign aisles (verified 2026-11-16). The apps send `aisle_uid` themselves, from the per-account ingredient→aisle map at `GET /v2/sync/groceryingredients/` (`{uid, name, aisle_uid}`) and the aisle list at `GET /v2/sync/groceryaisles/` (`{uid, name, order_flag}`)
 10. **Preserve Aisles**: Don't overwrite aisle field when syncing - only sync `name`, `purchased`, timestamps
 11. **Two-Step Recipe Sync**: `/sync/recipes/` returns only `{uid, hash}` pairs; must fetch each recipe individually via `/sync/recipe/{uid}/`
 12. **No Bulk Recipe Create**: `POST /v2/sync/recipes/` (plural) returns 500 errors; use individual `/sync/recipe/{uid}/` endpoint
