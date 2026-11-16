@@ -144,6 +144,10 @@ class PaprikaClient:
         """Create or update grocery items (array POST)."""
         return self._post_gzip("/v2/sync/groceries/", items)
 
+    def list_pantry_items(self) -> list:
+        """Return all pantry items."""
+        return self._request("GET", "/v2/sync/pantry/")["result"]
+
     def upsert_meals(self, meals: list[dict]) -> dict:
         """Create or update meal plan entries (array POST; there is no per-uid endpoint)."""
         return self._post_gzip("/v2/sync/meals/", meals)

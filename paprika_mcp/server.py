@@ -267,6 +267,22 @@ def trash_recipe(uid: str) -> dict:
     return ops.trash_recipe(_client(), uid)
 
 
+@mcp.tool()
+def list_pantry_items() -> list[dict]:
+    """List what's in the pantry (Paprika's pantry inventory)."""
+    return _client().list_pantry_items()
+
+
+@mcp.tool()
+def add_recipe_to_grocery_list(recipe_uid: str, list_uid: str | None = None) -> list[dict]:
+    """Add a recipe's ingredients to a grocery list (the default list if list_uid is omitted).
+
+    Each ingredient line becomes one item linked to the recipe; section headers
+    like "For the sauce:" are skipped.
+    """
+    return ops.add_recipe_to_grocery_list(_client(), recipe_uid, list_uid)
+
+
 def main() -> None:
     settings = get_settings()
     mcp.run(transport="http", host="127.0.0.1", port=settings.paprika_port)

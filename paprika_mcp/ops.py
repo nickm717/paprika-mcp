@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 from .client import PaprikaClient
+from .ingredients import ingredient_lines
 
 # Writable recipe fields and their defaults (API_REFERENCE.md "Recipe Object Fields").
 RECIPE_DEFAULTS: dict[str, Any] = {
@@ -299,3 +300,12 @@ def list_meals(client: PaprikaClient, start_date: str | None = None, end_date: s
         meal["meal_type_name"] = MEAL_TYPES.get(meal.get("type"), "Unknown")
         result.append(meal)
     return result
+
+
+def add_recipe_to_grocery_list(client: PaprikaClient, recipe_uid: str, list_uid: str | None = None) -> list[dict]:
+    """Add each ingredient line of a recipe as a grocery item (Paprika parses quantities)."""
+    recipe = _fetch_recipe(client, recipe_uid)
+    lines = ingredient_lines(recipe.get("ingredients", ""))
+    if not lines:
+        raise ValueError(f"Recipe {recipe.get('name', recipe_uid)!r} has no ingredients")
+    return add_grocery_items(client, [{"name": line, "recipe_uid": recipe_uid} for line in lines], list_uid)
