@@ -12,6 +12,7 @@ except ModuleNotFoundError:  # Python < 3.11
 CONFIG_DIR = Path.home() / "Library" / "Application Support" / "paprika-mcp"
 CONFIG_FILE = CONFIG_DIR / "config.toml"
 TOKEN_CACHE_FILE = CONFIG_DIR / ".paprika_token.json"
+RECIPE_CACHE_FILE = CONFIG_DIR / "recipe_cache.json"
 
 
 @dataclass

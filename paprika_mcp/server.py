@@ -2,7 +2,8 @@ from fastmcp import FastMCP
 
 from . import ops
 from .client import PaprikaClient
-from .config import get_settings, token_cache_path
+from .config import RECIPE_CACHE_FILE, get_settings, token_cache_path
+from .recipe_cache import RecipeCache
 
 mcp = FastMCP("Paprika Recipe Manager")
 
@@ -171,6 +172,23 @@ def add_grocery_item(
         separate=separate,
         recipe_uid=recipe_uid,
     )
+
+
+@mcp.tool()
+def search_recipes(query: str = "", ingredient: str = "", category: str = "", limit: int = 20) -> list[dict]:
+    """Search your recipes by name, ingredient and/or category (all case-insensitive).
+
+    `query` matches the recipe name, `ingredient` matches text in the ingredient
+    list, `category` must equal a category name. Terms given are combined (AND).
+    Trashed recipes are excluded. Returns summaries; use get_recipe(uid) for full
+    details. The first call downloads every recipe and may be slow; later calls
+    only fetch recipes that changed.
+    """
+    results = RecipeCache(RECIPE_CACHE_FILE).search(
+        _client(), query=query, ingredient=ingredient, category=category, limit=limit
+    )
+    keys = ("uid", "name", "categories", "rating", "total_time")
+    return [{k: r.get(k) for k in keys} for r in results]
 
 
 @mcp.tool()
