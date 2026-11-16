@@ -16,6 +16,8 @@ def test_add_recipe_to_grocery_list(client, mock_api):
     mock_api.get(f"{API}/v2/sync/grocerylists/").mock(
         return_value=httpx.Response(200, json={"result": [{"uid": "L1", "name": "Costco"}]})
     )
+    mock_api.get(f"{API}/v2/sync/groceryaisles/").mock(return_value=httpx.Response(200, json={"result": []}))
+    mock_api.get(f"{API}/v2/sync/groceryingredients/").mock(return_value=httpx.Response(200, json={"result": []}))
     mock_api.post(f"{API}/v2/sync/notify/").mock(return_value=httpx.Response(200, json={}))
     route =mock_api.post(f"{API}/v2/sync/groceries/").mock(return_value=httpx.Response(200, json={"result": True}))
 

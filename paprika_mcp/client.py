@@ -132,6 +132,14 @@ class PaprikaClient:
         """Return all grocery lists."""
         return self._request("GET", "/v2/sync/grocerylists/")["result"]
 
+    def list_grocery_aisles(self) -> list:
+        """Return the account's grocery aisles ({uid, name, order_flag})."""
+        return self._request("GET", "/v2/sync/groceryaisles/")["result"]
+
+    def list_grocery_ingredients(self) -> list:
+        """Return the account's learned ingredient-to-aisle map ({uid, name, aisle_uid})."""
+        return self._request("GET", "/v2/sync/groceryingredients/")["result"]
+
     def list_grocery_items(self) -> list:
         """Return all grocery items across all lists."""
         return self._request("GET", "/v2/sync/groceries/")["result"]

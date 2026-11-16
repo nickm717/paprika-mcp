@@ -60,12 +60,18 @@ appeared under Dinner. Groceries posted with `aisle: ""` and the full line as
 `ingredient` (e.g. "2 cups flour") came back with `aisle: ""` from the API.
 A follow-up test with bare names ("butter", "bananas", "cheddar cheese") also
 landed in the app's Miscellaneous section, even though "butter" → Dairy exists
-in `groceryingredients`. **The server never assigns aisles** — see Aisles below.
+in `groceryingredients`. **The server never assigns aisles**, so the MCP now does it (below).
 
 **Defaults:**
 - Grocery tools with no `list_uid` use the list with `is_default: true`, else the first list. A `list_uid` may be an exact uid or a list name (case-insensitive); anything else raises `ValueError` listing the lists.
 - `update_recipe` / `create_recipe` coerce LLM-style values: a list for a text field is joined with newlines, a bare string `categories` becomes a one-item list, `rating` must be 0–5, bool fields must be real bools.
-- `add_grocery_items` sends one POST for all items; `aisle` is left empty (the item lands in Miscellaneous) and `ingredient` defaults to `name.lower()`.
+- `add_grocery_items` sends one POST for all items. Aisles are filed the way the apps do it:
+  - `ingredient` is parsed from the name (`ingredients.ingredient_name`: drops quantity, unit, parentheticals and anything after a comma, e.g. "2 cups flour, sifted" → "flour").
+  - The parsed name is looked up (also as singular/plural) in `GET /v2/sync/groceryingredients/`; a hit sets `aisle_uid` and the aisle `name` from `GET /v2/sync/groceryaisles/`.
+  - A miss leaves `aisle: ""` / `aisle_uid: null` (Miscellaneous).
+  - An explicit `aisle` name on an item wins; it must match an aisle (case-insensitive) or `ValueError` lists them.
+- `update_grocery_item` accepts `aisle` as an aisle name and sets `aisle_uid` with it; `""` clears both.
+- `list_grocery_aisles` returns `{uid, name}` in store order (`order_flag`).
 - `add_recipe_to_grocery_list` adds each ingredient line as an item (blank lines
   and lines ending in `:` skipped) with `recipe_uid` set; quantities are left in
   the name for Paprika to parse.
@@ -187,7 +193,7 @@ Authorization: Bearer <token>
 
 **Tooling Note:**
 - The MCP tool `list_grocery_items` filters by list (`list_uid` optional: default list, a uid, or a list name); set `include_checked=true` to include purchased items.
-- The MCP tool `add_grocery_item` takes an optional `list_uid` (uid or list name); `ingredient` defaults to `name.lower()` and `aisle` is left empty, so the item lands in Miscellaneous.
+- The MCP tool `add_grocery_item` takes an optional `list_uid` (uid or list name); `ingredient` is parsed from the name and the aisle filed from the account's learned map (see MCP Tooling above).
 
 #### Create/Update Grocery Items
 **Request:**

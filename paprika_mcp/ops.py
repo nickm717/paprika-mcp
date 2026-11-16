@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 
 from .client import PaprikaClient
-from .ingredients import ingredient_lines
+from .ingredients import ingredient_lines, ingredient_name
 
 # Writable recipe fields and their defaults (API_REFERENCE.md "Recipe Object Fields").
 RECIPE_DEFAULTS: dict[str, Any] = {
@@ -170,16 +170,55 @@ def list_grocery_items(client: PaprikaClient, list_uid: str | None = None, inclu
     return items
 
 
+class Aisles:
+    """The account's aisles plus its learned ingredient-to-aisle map (the server never assigns aisles)."""
+
+    def __init__(self, client: PaprikaClient) -> None:
+        self.aisles = sorted(client.list_grocery_aisles(), key=lambda a: a.get("order_flag") or 0)
+        by_uid = {a["uid"]: a for a in self.aisles}
+        self.learned: dict[str, dict] = {}
+        for g in client.list_grocery_ingredients():
+            aisle = by_uid.get(g.get("aisle_uid"))
+            if aisle and g.get("name"):
+                self.learned.setdefault(str(g["name"]).strip().lower(), aisle)
+
+    def named(self, name: str) -> dict:
+        for a in self.aisles:
+            if (a.get("name") or "").strip().lower() == str(name).strip().lower():
+                return a
+        names = ", ".join(a.get("name", "") for a in self.aisles)
+        raise ValueError(f"Grocery aisle {name!r} not found. Aisles: {names}")
+
+    def guess(self, ingredient: str) -> dict | None:
+        n = ingredient.strip().lower()
+        variants = [n, n + "s", n + "es"]
+        if n.endswith("es"):
+            variants.append(n[:-2])
+        if n.endswith("s"):
+            variants.append(n[:-1])
+        for v in variants:
+            if v in self.learned:
+                return self.learned[v]
+        return None
+
+
+def list_grocery_aisles(client: PaprikaClient) -> list[dict]:
+    """Aisles in store order, as {uid, name}."""
+    return [{"uid": a["uid"], "name": a.get("name")} for a in Aisles(client).aisles]
+
+
 def _new_grocery_item(list_uid: str, name: str, quantity: str | None = None,
-                      instruction: str | None = None, recipe_uid: str | None = None) -> dict:
+                      instruction: str | None = None, recipe_uid: str | None = None,
+                      ingredient: str | None = None, aisle: dict | None = None) -> dict:
     return {
         "uid": new_uid(),
         "recipe_uid": recipe_uid,
         "name": name,
         "order_flag": 0,
         "purchased": False,
-        "aisle": "",
-        "ingredient": name.lower(),
+        "aisle": aisle["name"] if aisle else "",
+        "aisle_uid": aisle["uid"] if aisle else None,
+        "ingredient": ingredient if ingredient is not None else ingredient_name(name),
         "recipe": None,
         "instruction": instruction or "",
         "quantity": quantity or "",
@@ -189,16 +228,24 @@ def _new_grocery_item(list_uid: str, name: str, quantity: str | None = None,
 
 
 def add_grocery_items(client: PaprikaClient, items: list[dict], list_uid: str | None = None) -> list[dict]:
-    """Add items ({name, quantity?, instruction?, recipe_uid?}) in one request."""
+    """Add items ({name, quantity?, instruction?, recipe_uid?, aisle?}) in one request.
+
+    Each item is filed into the aisle the account has learned for its ingredient,
+    unless an explicit aisle name is given.
+    """
     if not items:
         raise ValueError("No items given")
     target = resolve_list_uid(client, list_uid)
+    aisles = Aisles(client)
     built = []
     for item in items:
         if not item.get("name"):
             raise ValueError(f"Grocery item is missing a name: {item!r}")
+        ingredient = ingredient_name(item["name"])
+        aisle = aisles.named(item["aisle"]) if item.get("aisle") else aisles.guess(ingredient)
         built.append(_new_grocery_item(
-            target, item["name"], item.get("quantity"), item.get("instruction"), item.get("recipe_uid")
+            target, item["name"], item.get("quantity"), item.get("instruction"), item.get("recipe_uid"),
+            ingredient, aisle,
         ))
     client.upsert_grocery_items(built)
     client.notify()
@@ -228,6 +275,11 @@ def update_grocery_item(client: PaprikaClient, uid: str, changes: dict) -> dict:
         raise ValueError(f"Unknown grocery field(s): {', '.join(bad)}. Allowed: {', '.join(sorted(GROCERY_EDITABLE))}")
     if "list_uid" in changes:
         changes = {**changes, "list_uid": resolve_list_uid(client, changes["list_uid"])}
+    if changes.get("aisle"):
+        aisle = Aisles(client).named(changes["aisle"])
+        changes = {**changes, "aisle": aisle["name"], "aisle_uid": aisle["uid"]}
+    elif "aisle" in changes:
+        changes = {**changes, "aisle": "", "aisle_uid": None}
     (item,) = _fetch_grocery_items(client, [uid])
     item.update(changes)
     return _save_grocery_items(client, [item])[0]

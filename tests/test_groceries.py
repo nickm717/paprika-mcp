@@ -32,6 +32,8 @@ ITEM = {
 def api(mock_api):
     mock_api.get(f"{API}/v2/sync/grocerylists/").mock(return_value=httpx.Response(200, json={"result": LISTS}))
     mock_api.get(f"{API}/v2/sync/groceries/").mock(return_value=httpx.Response(200, json={"result": [dict(ITEM)]}))
+    mock_api.get(f"{API}/v2/sync/groceryaisles/").mock(return_value=httpx.Response(200, json={"result": []}))
+    mock_api.get(f"{API}/v2/sync/groceryingredients/").mock(return_value=httpx.Response(200, json={"result": []}))
     mock_api.post(f"{API}/v2/sync/notify/").mock(return_value=httpx.Response(200, json={}))
     return mock_api.post(f"{API}/v2/sync/groceries/").mock(return_value=httpx.Response(200, json={"result": True}))
 
@@ -45,7 +47,8 @@ def test_add_items_single_post_array(client, api):
     for item in uploaded:
         assert UPPER_UUID.match(item["uid"])
         assert item["aisle"] == ""
-        assert item["ingredient"] == item["name"].lower()
+        assert item["ingredient"] == item["name"].lower()  # bare names parse to themselves
+        assert item["aisle_uid"] is None
         assert item["list_uid"] == "L1"
         assert item["purchased"] is False
     assert uploaded[1]["quantity"] == "2"

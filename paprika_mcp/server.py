@@ -72,6 +72,16 @@ def list_grocery_lists() -> list[dict]:
 
 
 @mcp.tool()
+def list_grocery_aisles() -> list[dict]:
+    """List the grocery aisles in store order, as {uid, name}.
+
+    Use these names for the optional "aisle" of an item in add_grocery_item(s)
+    or update_grocery_item.
+    """
+    return ops.list_grocery_aisles(_client())
+
+
+@mcp.tool()
 def list_grocery_items(list_uid: str | None = None, include_checked: bool = False) -> list[dict]:
     """List grocery items on a list (the default list if list_uid is omitted; a list name works too).
 
@@ -137,13 +147,17 @@ def add_grocery_item(
     instruction: str | None = None,
     list_uid: str | None = None,
     recipe_uid: str | None = None,
+    aisle: str | None = None,
 ) -> dict:
     """Add one grocery item. Omit list_uid to use the default grocery list;
     list_uid may also be a list name.
 
-    Paprika assigns the aisle itself. To add several items, use add_grocery_items.
+    The item is filed into the aisle Paprika has learned for its ingredient
+    (e.g. "2 cups flour" -> flour's aisle); unknown ingredients go to
+    Miscellaneous. Pass aisle (a name from list_grocery_aisles) to choose one.
+    To add several items, use add_grocery_items.
     """
-    item = {"name": name, "quantity": quantity, "instruction": instruction, "recipe_uid": recipe_uid}
+    item = {"name": name, "quantity": quantity, "instruction": instruction, "recipe_uid": recipe_uid, "aisle": aisle}
     return ops.add_grocery_items(_client(), [item], list_uid)[0]
 
 
@@ -152,8 +166,11 @@ def add_grocery_items(items: list[dict], list_uid: str | None = None) -> list[di
     """Add several grocery items in one go. Omit list_uid to use the default list;
     list_uid may also be a list name.
 
-    Each item is {"name": str, "quantity": str (optional), "instruction": str (optional)},
+    Each item is {"name": str, "quantity": str (optional), "instruction": str (optional),
+    "aisle": str (optional, a name from list_grocery_aisles)},
     e.g. [{"name": "Eggs", "quantity": "12"}, {"name": "Milk"}].
+    Items without an aisle are filed into the aisle Paprika has learned for
+    their ingredient; unknown ingredients go to Miscellaneous.
     """
     return ops.add_grocery_items(_client(), items, list_uid)
 
@@ -163,6 +180,7 @@ def update_grocery_item(uid: str, changes: dict) -> dict:
     """Change fields on a grocery item, e.g. {"quantity": "2"} or {"list_uid": "..."} to move it.
 
     Editable: name, quantity, instruction, purchased, list_uid, aisle, ingredient.
+    aisle is a name from list_grocery_aisles ("" moves it to Miscellaneous).
     Other fields are kept as they are in Paprika.
     """
     return ops.update_grocery_item(_client(), uid, changes)
@@ -280,7 +298,8 @@ def add_recipe_to_grocery_list(recipe_uid: str, list_uid: str | None = None) -> 
     """Add a recipe's ingredients to a grocery list (the default list if list_uid is omitted; a list name works too).
 
     Each ingredient line becomes one item linked to the recipe; section headers
-    like "For the sauce:" are skipped.
+    like "For the sauce:" are skipped. Each item is filed into the aisle Paprika
+    has learned for its ingredient.
     """
     return ops.add_recipe_to_grocery_list(_client(), recipe_uid, list_uid)
 
