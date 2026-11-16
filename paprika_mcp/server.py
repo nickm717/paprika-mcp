@@ -153,8 +153,9 @@ def add_grocery_item(
     list_uid may also be a list name.
 
     The item is filed into the aisle Paprika has learned for its ingredient
-    (e.g. "2 cups flour" -> flour's aisle); unknown ingredients go to
-    Miscellaneous. Pass aisle (a name from list_grocery_aisles) to choose one.
+    (e.g. "2 cups flour" -> flour's aisle), else a common-foods table; anything
+    else goes to Miscellaneous (returned with aisle ""). Pass aisle (a name from
+    list_grocery_aisles) to choose one.
     To add several items, use add_grocery_items.
     """
     item = {"name": name, "quantity": quantity, "instruction": instruction, "recipe_uid": recipe_uid, "aisle": aisle}
@@ -162,7 +163,7 @@ def add_grocery_item(
 
 
 @mcp.tool()
-def add_grocery_items(items: list[dict], list_uid: str | None = None) -> list[dict]:
+def add_grocery_items(items: list[dict], list_uid: str | None = None) -> dict:
     """Add several grocery items in one go. Omit list_uid to use the default list;
     list_uid may also be a list name.
 
@@ -170,9 +171,12 @@ def add_grocery_items(items: list[dict], list_uid: str | None = None) -> list[di
     "aisle": str (optional, a name from list_grocery_aisles)},
     e.g. [{"name": "Eggs", "quantity": "12"}, {"name": "Milk"}].
     Items without an aisle are filed into the aisle Paprika has learned for
-    their ingredient; unknown ingredients go to Miscellaneous.
+    their ingredient, else a common-foods table; anything else goes to Miscellaneous.
+
+    Returns {"items": [...], "unfiled": [{uid, name}], "next_step"?}. If you
+    already know an item's aisle, pass it up front instead.
     """
-    return ops.add_grocery_items(_client(), items, list_uid)
+    return ops.filing_report(ops.add_grocery_items(_client(), items, list_uid))
 
 
 @mcp.tool()
@@ -294,14 +298,16 @@ def list_pantry_items() -> list[dict]:
 
 
 @mcp.tool()
-def add_recipe_to_grocery_list(recipe_uid: str, list_uid: str | None = None) -> list[dict]:
+def add_recipe_to_grocery_list(recipe_uid: str, list_uid: str | None = None) -> dict:
     """Add a recipe's ingredients to a grocery list (the default list if list_uid is omitted; a list name works too).
 
     Each ingredient line becomes one item linked to the recipe; section headers
     like "For the sauce:" are skipped. Each item is filed into the aisle Paprika
-    has learned for its ingredient.
+    has learned for its ingredient, else a common-foods table.
+
+    Returns {"items": [...], "unfiled": [{uid, name}], "next_step"?}.
     """
-    return ops.add_recipe_to_grocery_list(_client(), recipe_uid, list_uid)
+    return ops.filing_report(ops.add_recipe_to_grocery_list(_client(), recipe_uid, list_uid))
 
 
 def main(stdio: bool = False) -> None:

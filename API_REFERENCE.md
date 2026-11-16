@@ -68,7 +68,9 @@ in `groceryingredients`. **The server never assigns aisles**, so the MCP now doe
 - `add_grocery_items` sends one POST for all items. Aisles are filed the way the apps do it:
   - `ingredient` is parsed from the name (`ingredients.ingredient_name`: drops quantity, unit, parentheticals and anything after a comma, e.g. "2 cups flour, sifted" → "flour").
   - The parsed name is looked up (also as singular/plural) in `GET /v2/sync/groceryingredients/`; a hit sets `aisle_uid` and the aisle `name` from `GET /v2/sync/groceryaisles/`.
+  - Next, a built-in common-foods table (`aisle_table.py`, keyed by Paprika's default aisle names) is tried: whole name, then shorter endings ("red bell pepper" → "bell pepper"), then shorter beginnings ("chicken thighs" → "chicken"). A table aisle the account doesn't have is skipped. The apps' own food list isn't exposed by the API, which is why this table exists.
   - A miss leaves `aisle: ""` / `aisle_uid: null` (Miscellaneous).
+  - The `add_grocery_items` and `add_recipe_to_grocery_list` tools return `{"items", "unfiled": [{uid, name}], "next_step"?}` so Claude can file the rest with `update_grocery_item`.
   - An explicit `aisle` name on an item wins; it must match an aisle (case-insensitive) or `ValueError` lists them.
 - `update_grocery_item` accepts `aisle` as an aisle name and sets `aisle_uid` with it; `""` clears both.
 - `list_grocery_aisles` returns `{uid, name}` in store order (`order_flag`).

@@ -261,6 +261,19 @@ def add_grocery_items(client: PaprikaClient, items: list[dict], list_uid: str | 
     return built
 
 
+def filing_report(items: list[dict]) -> dict:
+    """Wrap added items with the ones no aisle was found for, and what to do about them."""
+    unfiled = [{"uid": i["uid"], "name": i["name"]} for i in items if not i.get("aisle_uid")]
+    report: dict = {"items": items, "unfiled": unfiled}
+    if unfiled:
+        report["next_step"] = (
+            "These items are in Miscellaneous. If you can tell which aisle each belongs in, "
+            "call update_grocery_item(uid, {\"aisle\": <name from list_grocery_aisles>}); "
+            "leave any you're unsure of."
+        )
+    return report
+
+
 def _fetch_grocery_items(client: PaprikaClient, uids: list[str]) -> list[dict]:
     by_uid = {i["uid"]: i for i in client.list_grocery_items()}
     missing = [u for u in uids if u not in by_uid]

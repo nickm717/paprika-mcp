@@ -105,3 +105,23 @@ def test_learned_aisle_beats_table(client, api, mock_api):
     ops.add_grocery_items(client, [{"name": "milk"}])
 
     assert filed(api)["milk"][1] == "Produce"
+
+
+def test_filing_report_lists_unfiled_items():
+    items = [
+        {"uid": "U1", "name": "milk", "aisle": "Dairy", "aisle_uid": "A_DAIRY"},
+        {"uid": "U2", "name": "unicorn dust", "aisle": "", "aisle_uid": None},
+    ]
+
+    report = ops.filing_report(items)
+
+    assert report["items"] == items
+    assert report["unfiled"] == [{"uid": "U2", "name": "unicorn dust"}]
+    assert "update_grocery_item" in report["next_step"]
+
+
+def test_filing_report_all_filed_has_no_next_step():
+    report = ops.filing_report([{"uid": "U1", "name": "milk", "aisle": "Dairy", "aisle_uid": "A_DAIRY"}])
+
+    assert report["unfiled"] == []
+    assert "next_step" not in report

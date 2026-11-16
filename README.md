@@ -156,11 +156,11 @@ Grocery tools default to your default grocery list when `list_uid` is omitted, a
 | `list_grocery_aisles` | Your aisles in store order |
 | `list_grocery_items(list_uid?, include_checked?)` | Items on a list (removed items hidden) |
 | `add_grocery_item(name, quantity?, instruction?, list_uid?, aisle?)` | Add one item, filed into its aisle |
-| `add_grocery_items(items, list_uid?)` | Add several items at once, each filed into its aisle |
+| `add_grocery_items(items, list_uid?)` | Add several items at once, each filed into its aisle; returns any it couldn't file |
 | `update_grocery_item(uid, changes)` | Edit or move an item |
 | `check_grocery_items(uids)` / `uncheck_grocery_items(uids)` | Mark bought / not bought |
 | ⚠️ `remove_grocery_items(uids)` | Remove items |
-| `add_recipe_to_grocery_list(recipe_uid, list_uid?)` | Add a recipe's ingredients |
+| `add_recipe_to_grocery_list(recipe_uid, list_uid?)` | Add a recipe's ingredients, filed into aisles; returns any it couldn't file |
 | **Meal plan** | |
 | `list_meal_plans(start_date?, end_date?)` | Meal entries, optionally by date range |
 | `get_meals_for_date(date)` | Meals on one date |
