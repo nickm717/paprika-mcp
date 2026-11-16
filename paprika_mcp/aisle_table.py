@@ -8,6 +8,8 @@ default aisles; a name the account doesn't have is simply not used.
 
 from __future__ import annotations
 
+import unicodedata
+
 _TABLE: dict[str, str] = {}
 
 
@@ -27,7 +29,7 @@ _add("Produce", """
     jalapeno, chili, broccoli, cauliflower, cabbage, brussels sprout, kale, spinach,
     baby spinach, lettuce, romaine, arugula, salad, mixed greens, asparagus, green bean,
     pea, snap pea, corn, mushroom, beet, radish, turnip, parsnip, leek, fennel, okra,
-    herb, basil, cilantro, parsley, dill, mint, rosemary, thyme, sage, chive
+    jalapeno, chilli, chile, red chilli, green chile, herb, basil, cilantro, parsley, dill, mint, rosemary, thyme, sage, chive
 """)
 _add("Dairy", """
     milk, whole milk, skim milk, buttermilk, cream, heavy cream, whipping cream, half and half,
@@ -39,7 +41,8 @@ _add("Meat", """
     pork loin, bacon, sausage, ground turkey, turkey, lamb, ham, ground pork, veal, chorizo
 """)
 _add("Seafood", "salmon, tuna steak, shrimp, prawn, cod, tilapia, halibut, scallop, crab, lobster, fish, mussel, clam")
-_add("Deli", "salami, prosciutto, pepperoni, sliced turkey, hummus")
+_add("Deli", "salami, prosciutto, pepperoni, pancetta, sliced turkey, hummus")
+_add("International Cuisine", "nori, rice paper, curry paste, coconut cream, gochujang")
 _add("Bakery", "baguette, croissant, bagel, bun, roll, pita, naan, tortilla, sourdough")
 _add("Breads and Cereals", "bread, cereal, oats, rolled oats, oatmeal, granola, breadcrumbs, panko, crackers")
 _add("Baking Goods", """
@@ -49,6 +52,7 @@ _add("Baking Goods", """
 """)
 _add("Pasta, Rice and Beans", """
     pasta, spaghetti, penne, linguine, fettuccine, macaroni, lasagna, noodle, egg noodle,
+    fusilli, orzo, rigatoni, farfalle, gnocchi, tortellini, ravioli, ramen,
     rice, brown rice, basmati rice, jasmine rice, arborio rice, quinoa, couscous, lentil,
     chickpea, black bean, kidney bean, pinto bean, bean
 """)
@@ -60,13 +64,13 @@ _add("Canned and Jar Goods", """
 _add("Sauces and Condiments", """
     peanut butter, ketchup, mustard, dijon mustard, mayonnaise, mayo, soy sauce, hot sauce,
     sriracha, salsa, bbq sauce, worcestershire sauce, fish sauce, pesto, marinara, tahini,
-    vinegar, balsamic vinegar
+    vinegar, balsamic vinegar, miso, white miso, miso paste, white miso paste, tamari
 """)
 _add("Oils and Dressings", "oil, olive oil, vegetable oil, canola oil, sesame oil, coconut oil, cooking spray, dressing")
 _add("Spices and Seasonings", """
     salt, kosher salt, sea salt, black pepper, peppercorn, cumin, paprika, smoked paprika,
     chili powder, cinnamon, nutmeg, oregano, dried oregano, bay leaf, turmeric, curry powder,
-    garlic powder, onion powder, red pepper flakes, cayenne, coriander, garam masala, spice
+    garlic powder, onion powder, red pepper flakes, cayenne, coriander, garam masala, sesame seed, spice
 """)
 _add("Frozen Foods", "ice cream, frozen pizza, frozen vegetables, frozen fruit")
 _add("Snacks", "chips, tortilla chips, popcorn, pretzels, nuts, almonds, cashews, walnuts, peanuts, cookies")
@@ -91,7 +95,8 @@ def table_aisle(ingredient: str) -> str | None:
     Tries the whole name, then shorter endings ("red bell pepper" -> "bell pepper"),
     then shorter beginnings ("chicken thighs" -> "chicken"), each singular or plural.
     """
-    words = (ingredient or "").strip().lower().split()
+    text = unicodedata.normalize("NFKD", ingredient or "").encode("ascii", "ignore").decode()
+    words = text.replace("-", " ").strip().lower().split()
     if not words:
         return None
     if words[0] == "frozen":

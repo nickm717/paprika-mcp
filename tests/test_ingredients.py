@@ -9,6 +9,10 @@ def test_ingredient_lines_skips_blank_and_headers():
     assert ingredient_lines("2 cups flour\n\nFor the sauce:\n 1 egg ") == ["2 cups flour", "1 egg"]
 
 
+def test_ingredient_lines_skips_markdown_headers_and_scale_widgets():
+    assert ingredient_lines("**Pasta**\n1x 2x 3x\n1 lb pasta") == ["1 lb pasta"]
+
+
 def test_add_recipe_to_grocery_list(client, mock_api):
     mock_api.get(f"{API}/v2/sync/recipe/R1/").mock(
         return_value=httpx.Response(200, json={"result": {"uid": "R1", "name": "Soup", "ingredients": "1 onion\nDressing:\n2 carrots"}})
