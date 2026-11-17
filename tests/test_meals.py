@@ -11,14 +11,23 @@ MEAL = {
     "type": 2,
     "name": "Salmon",
     "order_flag": 1,
-    "type_uid": "TYPEUID",
+    "type_uid": "U_DINNER",
     "scale": None,
     "is_ingredient": False,
 }
 
 
+MEAL_TYPES = [
+    {"uid": "U_DINNER", "name": "Dinner", "order_flag": 2, "original_type": 2},
+    {"uid": "U_LUNCH", "name": "Lunch", "order_flag": 1, "original_type": 1},
+    {"uid": "U_BREAKFAST", "name": "Breakfast", "order_flag": 0, "original_type": 0},
+    {"uid": "U_SNACKS", "name": "Snacks", "order_flag": 3, "original_type": 3},
+]
+
+
 @pytest.fixture
 def api(mock_api):
+    mock_api.get(f"{API}/v2/sync/mealtypes/").mock(return_value=httpx.Response(200, json={"result": MEAL_TYPES}))
     mock_api.get(f"{API}/v2/sync/meals/").mock(return_value=httpx.Response(200, json={"result": [dict(MEAL)]}))
     mock_api.get(f"{API}/v2/sync/recipe/R9/").mock(
         return_value=httpx.Response(200, json={"result": {"uid": "R9", "name": "Chili"}})
@@ -49,8 +58,42 @@ def test_add_meal_with_recipe_uses_recipe_name(client, api):
     assert meal["recipe_uid"] == "R9"
     assert meal["date"] == "2026-11-21 00:00:00"
     assert meal["type"] == 2
-    assert meal["type_uid"] == ""
+    assert meal["type_uid"] == "U_DINNER"
     assert meal["deleted"] is False
+
+
+@pytest.mark.parametrize("given, num, uid", [
+    ("breakfast", 0, "U_BREAKFAST"), ("Lunch", 1, "U_LUNCH"), ("snack", 3, "U_SNACKS"), ("snacks", 3, "U_SNACKS"),
+])
+def test_add_meal_sets_the_accounts_meal_type_uid(client, api, given, num, uid):
+    ops.add_meal(client, "2026-11-21", given, name="Toast")
+
+    (meal,) = decode_upload(api.calls[0].request)
+    assert (meal["type"], meal["type_uid"]) == (num, uid)
+
+
+def test_add_meal_unknown_type_lists_the_accounts_types(client, api):
+    with pytest.raises(ValueError, match="Breakfast, Lunch, Dinner, Snacks"):
+        ops.add_meal(client, "2026-11-21", "supper", name="Toast")
+
+    assert not api.called
+
+
+def test_update_meal_type_changes_type_uid_too(client, api):
+    ops.update_meal(client, "M1", meal_type="lunch")
+
+    (meal,) = decode_upload(api.calls[0].request)
+    assert (meal["type"], meal["type_uid"]) == (1, "U_LUNCH")
+
+
+def test_update_meal_repairs_missing_type_uid(client, mock_api, api):
+    broken = {**MEAL, "type_uid": ""}
+    mock_api.get(f"{API}/v2/sync/meals/").mock(return_value=httpx.Response(200, json={"result": [broken]}))
+
+    ops.update_meal(client, "M1", name="Salmon bowl")
+
+    (meal,) = decode_upload(api.calls[0].request)
+    assert meal["type_uid"] == "U_DINNER"
 
 
 def test_add_meal_requires_name_or_recipe(client, api):

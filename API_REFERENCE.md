@@ -56,7 +56,8 @@ underlying API. The full tool list is in the README. Tool logic lives in
 add to meal plan by `recipe_uid` → add recipe ingredients to the default list →
 remove meal → remove groceries → trash recipe all succeeded, and the Paprika
 app showed each change. A meal posted with `type_uid: ""` and only `type: 2`
-appeared under Dinner. Groceries posted with `aisle: ""` and the full line as
+appeared under Dinner at first, but later the app showed such meals under
+Snacks (see "Meal types" below); the MCP now always sends the type's uid. Groceries posted with `aisle: ""` and the full line as
 `ingredient` (e.g. "2 cups flour") came back with `aisle: ""` from the API.
 A follow-up test with bare names ("butter", "bananas", "cheddar cheese") also
 landed in the app's Miscellaneous section, even though "butter" → Dairy exists
@@ -84,8 +85,11 @@ in `groceryingredients`. **The server never assigns aisles**, so the MCP now doe
 - `add_recipe_to_grocery_list` adds each ingredient line as an item (blank lines
   and lines ending in `:` skipped) with `recipe_uid` set; quantities are left in
   the name for Paprika to parse.
-- Meal tools accept `meal_type` as breakfast/lunch/dinner/snack (any case) or 0–3,
-  and `date` as `YYYY-MM-DD`.
+- Meal tools accept `meal_type` as one of the account's meal type names (any case;
+  "snack" matches "Snacks") or 0–3, and `date` as `YYYY-MM-DD`. They look up
+  `GET /v2/sync/mealtypes/` and send both `type` and that type's `type_uid`.
+  `update_meal` also fills in a missing `type_uid` on any meal it saves, so
+  updating an old MCP-added meal moves it out of Snacks.
 
 **Recipe search cache:**
 - `search_recipes` keeps `recipe_cache.json` (mode 0600) in the config dir,
@@ -331,8 +335,22 @@ Authorization: Bearer <token>
 - `date`: Meal date in "YYYY-MM-DD HH:MM:SS" format
 - `type`: **Numeric meal type** (see mapping table below)
 - `name`: Meal display name
-- `type_uid`: Meal category identifier
+- `type_uid`: uid of the meal type from `GET /v2/sync/mealtypes/`. **Required in
+  practice:** the apps file a meal with an empty `type_uid` under Snacks, whatever
+  its `type` number says (seen live 2026-11-16).
 - `order_flag`: Display order within same type/date
+
+#### Get Meal Types
+
+```http
+GET /v2/sync/mealtypes/
+Authorization: Bearer <token>
+```
+
+Returns the account's meal types, for example
+`{"uid": "2167…F642", "name": "Dinner", "order_flag": 2, "color": "#2161C9",
+"export_all_day": false, "export_time": 64800, "original_type": 2}`.
+`original_type` is the matching `type` number (0–3). The uids differ per account.
 
 **Meal Type Mapping:**
 | Numeric Type | Meal Type | Description |
@@ -362,7 +380,7 @@ data: <gzip-compressed JSON array>
     "type": 2,
     "name": "Slow Cooker Cinnamon Applesauce",
     "order_flag": 0,
-    "type_uid": "",
+    "type_uid": "216713D08860CFA0D9787EA5C6CEBC8A8F5B73777F91C904853AC234BB9DF642",
     "scale": null,
     "is_ingredient": false,
     "deleted": false
@@ -382,6 +400,7 @@ data: <gzip-compressed JSON array>
 4. **There is no per-uid endpoint.** `POST /v2/sync/meals/{uid}/` returns `404 Not found.` — always POST the array to `/v2/sync/meals/`.
 5. `date` uses `"YYYY-MM-DD HH:MM:SS"`; `type` is 0=Breakfast, 1=Lunch, 2=Dinner, 3=Snack.
 6. Set `recipe_uid` to link a recipe, or `null` for a text-only meal.
+7. Set `type_uid` to the meal type's uid from `/v2/sync/mealtypes/`; an empty one shows under Snacks.
 
 **Soft Delete:** Set `deleted: true` on the entry and POST the array again. The entry then disappears from `GET /v2/sync/meals/` (verified 2026-11-16).
 

@@ -148,6 +148,10 @@ class PaprikaClient:
         """Return all meal plan entries."""
         return self._request("GET", "/v2/sync/meals/")["result"]
 
+    def list_meal_types(self) -> list:
+        """Return the account's meal types ({uid, name, order_flag, original_type, ...})."""
+        return self._request("GET", "/v2/sync/mealtypes/")["result"]
+
     def upsert_grocery_items(self, items: list[dict]) -> dict:
         """Create or update grocery items (array POST)."""
         return self._post_gzip("/v2/sync/groceries/", items)

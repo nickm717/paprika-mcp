@@ -164,8 +164,8 @@ Grocery tools default to your default grocery list when `list_uid` is omitted, a
 | **Meal plan** | |
 | `list_meal_plans(start_date?, end_date?)` | Meal entries, optionally by date range |
 | `get_meals_for_date(date)` | Meals on one date |
-| `add_meal(date, meal_type, name?, recipe_uid?)` | Add a meal (`meal_type`: breakfast/lunch/dinner/snack) |
-| `update_meal(uid, date?, meal_type?, name?, recipe_uid?)` | Move or edit a meal |
+| `add_meal(date, meal_type, name?, recipe_uid?)` | Add a meal (`meal_type`: breakfast/lunch/dinner/snack, or your own meal type names) |
+| `update_meal(uid, date?, meal_type?, name?, recipe_uid?)` | Move or edit a meal; also fixes meals saved without a meal type |
 | ⚠️ `remove_meal(uid)` | Remove a meal |
 | **Pantry** | |
 | `list_pantry_items` | Pantry inventory |

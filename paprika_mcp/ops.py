@@ -341,6 +341,38 @@ def parse_meal_type(value: str | int) -> int:
     raise ValueError(f"Unknown meal type {value!r}. Use one of: breakfast, lunch, dinner, snack")
 
 
+class MealTypes:
+    """The account's meal types. Meals must carry a type's uid; the apps file a meal with an
+    empty type_uid under Snacks no matter what its type number says."""
+
+    def __init__(self, client: PaprikaClient) -> None:
+        self.types = sorted(client.list_meal_types(), key=lambda t: t.get("order_flag") or 0)
+
+    @staticmethod
+    def _number(t: dict) -> int:
+        n = t.get("original_type")
+        return n if isinstance(n, int) else t.get("order_flag") or 0
+
+    def resolve(self, value: str | int) -> tuple[int, str]:
+        """(type number, type uid) for a meal type name or number."""
+        wanted = str(value).strip().lower().rstrip("s")  # "snack" matches "Snacks"
+        for t in self.types:
+            if (t.get("name") or "").strip().lower().rstrip("s") == wanted:
+                return self._number(t), t["uid"]
+        try:
+            num = parse_meal_type(value)
+        except ValueError:
+            num = None
+        if num is not None:
+            for t in self.types:
+                if self._number(t) == num:
+                    return num, t["uid"]
+            if not self.types:
+                return num, ""
+        names = ", ".join(t.get("name", "") for t in self.types) or "breakfast, lunch, dinner, snack"
+        raise ValueError(f"Unknown meal type {value!r}. Use one of: {names}")
+
+
 def parse_date(value: str) -> str:
     try:
         d = datetime.strptime(value.strip()[:10], "%Y-%m-%d")
@@ -353,7 +385,8 @@ def add_meal(client: PaprikaClient, date: str, meal_type: str | int,
              name: str | None = None, recipe_uid: str | None = None) -> dict:
     if not name and not recipe_uid:
         raise ValueError("Give a name or recipe_uid for the meal")
-    meal_date, type_num = parse_date(date), parse_meal_type(meal_type)
+    meal_date = parse_date(date)
+    type_num, type_uid = MealTypes(client).resolve(meal_type)
     if not name:
         name = _fetch_recipe(client, recipe_uid)["name"]
     meal = {
@@ -363,7 +396,7 @@ def add_meal(client: PaprikaClient, date: str, meal_type: str | int,
         "type": type_num,
         "name": name,
         "order_flag": 0,
-        "type_uid": "",
+        "type_uid": type_uid,
         "scale": None,
         "is_ingredient": False,
         "deleted": False,
@@ -391,14 +424,17 @@ def update_meal(client: PaprikaClient, uid: str, date: str | None = None, meal_t
     changes: dict = {}
     if date is not None:
         changes["date"] = parse_date(date)
+    types = MealTypes(client)
     if meal_type is not None:
-        changes["type"] = parse_meal_type(meal_type)
+        changes["type"], changes["type_uid"] = types.resolve(meal_type)
     if name is not None:
         changes["name"] = name
     if recipe_uid is not None:
         changes["recipe_uid"] = recipe_uid
     meal = _fetch_meal(client, uid)
     meal.update(changes)
+    if not meal.get("type_uid"):  # repair meals saved without one (they show under Snacks)
+        meal["type"], meal["type_uid"] = types.resolve(meal.get("type", 2))
     return _save_meal(client, meal)
 
 
