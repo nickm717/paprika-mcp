@@ -112,7 +112,7 @@ def get_meals_for_date(date: str) -> list[dict]:
 def add_meal(date: str, meal_type: str, name: str | None = None, recipe_uid: str | None = None) -> dict:
     """Add a meal to the meal plan.
 
-    date: YYYY-MM-DD. meal_type: breakfast, lunch, dinner or snack.
+    date: YYYY-MM-DD. meal_type: breakfast, lunch, dinner or snack (or another meal type in the account).
     Give recipe_uid to link a recipe (its name is used if name is omitted),
     or just a name for a text-only meal.
     """
@@ -129,7 +129,7 @@ def update_meal(
 ) -> dict:
     """Move or edit a meal plan entry. Only the fields you pass change.
 
-    date: YYYY-MM-DD. meal_type: breakfast, lunch, dinner or snack.
+    date: YYYY-MM-DD. meal_type: breakfast, lunch, dinner or snack (or another meal type in the account).
     """
     return ops.update_meal(_client(), uid, date, meal_type, name, recipe_uid)
 
